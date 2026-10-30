@@ -14,6 +14,8 @@ if (PHONE_PREVIEW) document.documentElement.classList.add('phone-preview');
 const STATUSES = ['Not Started','In Progress','Blocked','Done'];
 const PRIORITIES = ['High','Medium','Low'];
 const APPROVALS = ['Pending','Approved','Rejected','On Hold','Cancelled'];
+const LIMITS = [30, 45, 60];
+const DEFAULT_LIMIT = 45;
 
 let token = null, data = null, currentTab = 'overview';
 const filters = { q:'', emp:'', approval:'', status:'' };
@@ -127,6 +129,10 @@ async function reload(){
 
 // ---------- render ----------
 function render(){
+  renderInner();
+  tickCountdowns();
+}
+function renderInner(){
   if (STAFF) {
     if (!IS_ADMIN && (currentTab === 'approvals' || currentTab === 'team')) currentTab = 'overview';
     $('appTitle').textContent = (data.brand ? data.brand + ' ' : '') + (IS_ADMIN ? 'Admin dashboard' : 'Task manager · ' + (data.me || ''));
@@ -172,14 +178,67 @@ function taskTable(list, emptyMsg){
       <td class="muted tid">${esc(t.id)}</td>
       <td class="primary"><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub clamp">${esc(t.details)}</div>` : ''}${addedBy(t)}</td>
       <td data-label="For">${esc(t.assignee)}</td>
-      <td data-label="Due" class="${t.overdue ? 'overdue' : ''}">${esc(t.dueLabel || '-')}</td>
+      <td data-label="Due" class="${t.overdue ? 'overdue' : ''}">${esc(dueText(t))}${countdownHtml(t)}</td>
       <td>${prioPill(t.priority)}</td>
       <td>${approvalPill(t.approval)}</td>
-      <td class="st">${statusPill(t.status)}${t.approval==='Approved' ? bar(t.progress) : ''}</td>
+      <td class="st">${statusPill(t.status)}${t.status === 'Done' ? takenHtml(t) : t.approval==='Approved' ? bar(t.progress) : ''}</td>
       <td class="hide-sm full">${t.remarks ? `<div class="t-sub">${esc(t.remarks)}</div>` : ''}</td>
     </tr>`).join('')}
   </table></div>`;
 }
+// ---------- ticket timing ----------
+function pad2(n){ return String(n).padStart(2, '0'); }
+function todayStr(){ const d = new Date(); return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()); }
+function nextSlot(){ const d = new Date(Date.now() + 15*60000); const m = Math.ceil(d.getMinutes()/15)*15; d.setMinutes(m, 0, 0); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+function fmtClock(hhmm){ const [h, m] = hhmm.split(':').map(Number); return (h % 12 || 12) + ':' + pad2(m) + ' ' + (h < 12 ? 'AM' : 'PM'); }
+function fmtMins(n){ n = Math.round(n); if (n < 60) return n + ' min'; const h = Math.floor(n/60), m = n % 60; return h + ' h' + (m ? ' ' + m + ' min' : ''); }
+function dueText(t){ return (t.dueLabel || 'No due date') + (t.limit ? ' · ' + t.limit + ' min' : ''); }
+function takenHtml(t){
+  if (t.status !== 'Done' || t.taken === '' || t.taken == null) return '';
+  const over = t.limit && t.taken > t.limit;
+  return `<span class="taken ${over ? 'over' : 'ok'}">Took ${fmtMins(t.taken)}${t.limit ? ' / ' + t.limit : ''}</span>`;
+}
+function countdownHtml(t){
+  if (!t.dueAtMs || t.status === 'Done' || t.approval !== 'Approved') return '';
+  return `<span class="cd" data-due="${t.dueAtMs}"></span>`;
+}
+function tickCountdowns(){
+  const now = Date.now();
+  document.querySelectorAll('.cd[data-due]').forEach(el => {
+    const diff = (Number(el.dataset.due) - now) / 60000;
+    el.textContent = diff >= 0 ? (diff < 1 ? 'due now' : fmtMins(Math.ceil(diff)) + ' left') : 'late by ' + fmtMins(Math.ceil(-diff));
+    el.classList.toggle('late', diff < 0);
+    el.classList.toggle('soon', diff >= 0 && diff <= 15);
+  });
+}
+setInterval(tickCountdowns, 30000);
+
+/** Date + start time + time limit fields (prefix keeps ids unique per form). */
+function timeFields(p, t){
+  const date = t && t.due ? t.due : todayStr();
+  const start = t && t.startTime ? t.startTime : nextSlot();
+  const limit = t && t.limit ? Number(t.limit) : DEFAULT_LIMIT;
+  return `<div class="row time-row">
+      <div class="field"><label>Date</label><input type="date" id="${p}Due" value="${esc(date)}" required></div>
+      <div class="field"><label>Start time</label><input type="time" id="${p}Start" value="${esc(start)}" step="300" required></div>
+      <div class="field"><label>Time limit</label><select id="${p}Limit">${LIMITS.map(l => `<option value="${l}" ${l===limit?'selected':''}>${l} min</option>`).join('')}</select></div>
+    </div>
+    <div class="due-preview" id="${p}Prev"></div>`;
+}
+function bindTimeFields(p){
+  const upd = () => {
+    const st = $(p+'Start').value, lim = Number($(p+'Limit').value), d = $(p+'Due').value;
+    if (!st || !d) { $(p+'Prev').textContent = ''; return; }
+    const [h, m] = st.split(':').map(Number); const end = h*60 + m + lim;
+    const endStr = pad2(Math.floor(end/60) % 24) + ':' + pad2(end % 60);
+    const dt = new Date(d + 'T00:00'); const label = dt.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+    $(p+'Prev').innerHTML = `Due by <b>${esc(fmtClock(endStr))}</b>, ${esc(label)}${end >= 1440 ? ' (next day)' : ''}`;
+  };
+  ['Start','Limit','Due'].forEach(k => $(p+k).addEventListener('input', upd));
+  upd();
+}
+function timeValues(p){ return { due: $(p+'Due').value, startTime: $(p+'Start').value, limit: Number($(p+'Limit').value) }; }
+
 function addedBy(t){ return t.createdBy ? `<div class="t-sub" style="font-size:11.5px">Added by <b>${esc(t.createdBy)}</b></div>` : ''; }
 function bindTaskRows(){ document.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => openTask(tr.dataset.id)); }
 
@@ -218,7 +277,7 @@ function renderApprovals(){
       ${list.map(t => `<tr>
         <td class="muted tid">${esc(t.id)}</td>
         <td class="primary"><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub">${esc(t.details)}</div>` : ''}${addedBy(t)}</td>
-        <td data-label="For">${esc(t.assignee)}</td><td data-label="Due">${esc(t.dueLabel || '-')}</td><td>${prioPill(t.priority)}</td><td>${approvalPill(t.approval)}</td>
+        <td data-label="For">${esc(t.assignee)}</td><td data-label="Due">${esc(dueText(t))}</td><td>${prioPill(t.priority)}</td><td>${approvalPill(t.approval)}</td>
         <td class="btns full">
           <button class="btn ok small" data-act="Approved" data-send="1" data-id="${esc(t.id)}" title="Approve and email the employee now">Approve &amp; send now</button>
           <button class="btn ghost small" data-act="Approved" data-id="${esc(t.id)}" title="Approve; the employee sees it in tonight's summary">Approve</button>
@@ -248,13 +307,14 @@ function renderNewTask(){
       <div class="field"><label>Task</label><input type="text" id="ntTask" maxlength="200" required placeholder="What needs to be done"></div>
       <div class="field"><label>Details</label><textarea id="ntDetails" placeholder="Instructions, links, expected result"></textarea></div>
       <div class="row">
-        <div class="field"><label>Employee</label><select id="ntEmp" required>${options(emps, '', 'Select employee')}</select></div>
+        <div class="field"><label>Employee</label><select id="ntEmp" required>${options(emps, emps.length === 1 ? emps[0] : '', 'Select employee')}</select></div>
         <div class="field"><label>Priority</label><select id="ntPrio">${options(PRIORITIES, 'Medium')}</select></div>
-        <div class="field"><label>Due date</label><input type="date" id="ntDue" min="${esc(data.today)}"></div>
       </div>
+      ${timeFields('nt')}
       ${addButtons('nt', false)}
     </form>`}</div>`;
   const f = $('ntForm'); if (!f) return;
+  bindTimeFields('nt');
   f.onsubmit = async e => {
     e.preventDefault();
     if (!$('ntEmp').value) { toast('Pick an employee.', true); return; }
@@ -262,8 +322,8 @@ function renderNewTask(){
     const btns = f.querySelectorAll('button[type=submit]'); btns.forEach(b => b.disabled = true);
     const who = $('ntEmp').value;
     try {
-      data = await call('adminAddTask', token, { task:$('ntTask').value, details:$('ntDetails').value, assignee:who,
-        priority:$('ntPrio').value, due:$('ntDue').value, approveNow:IS_ADMIN, sendNow });
+      data = await call('adminAddTask', token, Object.assign({ task:$('ntTask').value, details:$('ntDetails').value, assignee:who,
+        priority:$('ntPrio').value, approveNow:IS_ADMIN, sendNow }, timeValues('nt')));
       toast(addedMsg(who, sendNow));
       renderNewTask(); $('pendingCount').textContent = data.stats.pending;
     } catch (err) { toast(err.message, true); btns.forEach(b => b.disabled = false); }
@@ -359,21 +419,22 @@ function openTask(id){
       <div class="field"><label>Employee</label><select id="etEmp">${options(emps, t.assignee)}</select></div>
       <div class="field"><label>Priority</label><select id="etPrio">${options(PRIORITIES, t.priority)}</select></div>
     </div>
+    ${timeFields('et', t)}
     <div class="row">
-      <div class="field"><label>Due date</label><input type="date" id="etDue" value="${esc(t.due)}"></div>
       <div class="field"><label>Approval</label>${IS_ADMIN
         ? `<select id="etApp">${options(APPROVALS, t.approval)}</select>`
         : `<div style="padding:8px 0">${approvalPill(t.approval)}</div>`}</div>
     </div>
     ${IS_ADMIN && t.approval !== 'Approved' ? '<div class="field"><label class="switch"><input type="checkbox" id="etSend"> If approving, email the employee now</label></div>' : ''}
     <div class="card" style="background:var(--bg);box-shadow:none;padding:12px">
-      <div><b>Employee status:</b> ${statusPill(t.status)} ${t.approval==='Approved' ? Math.round(t.progress*100)+'%' : ''}</div>
+      <div><b>Employee status:</b> ${statusPill(t.status)} ${t.approval==='Approved' && t.status !== 'Done' ? Math.round(t.progress*100)+'%' : ''} ${takenHtml(t)}</div>
       ${t.remarks ? `<div style="margin-top:6px"><b>Remarks:</b> ${esc(t.remarks)}</div>` : ''}
       <div class="muted" style="margin-top:6px;font-size:12px">${t.createdBy ? 'Added by ' + esc(t.createdBy) + ' · ' : ''}Created ${esc(t.created||'-')}${t.approvedOn ? ' · Approved '+esc(t.approvedOn) : ''}${t.updated ? ' · Updated '+esc(t.updated) : ''}${t.completed ? ' · Completed '+esc(t.completed) : ''}</div>
     </div>
     <div class="actions">
       ${!IS_ADMIN && t.approval !== 'Cancelled' ? '<button class="btn bad" id="etCancelTask" style="margin-right:auto">Cancel task</button>' : ''}
       <button class="btn ghost" id="etClose">Close</button><button class="btn" id="etSave">Save changes</button></div>`);
+  bindTimeFields('et');
   $('etClose').onclick = closeModal;
   if ($('etCancelTask')) $('etCancelTask').onclick = async () => {
     const b = $('etCancelTask');
@@ -385,8 +446,8 @@ function openTask(id){
   $('etSave').onclick = async () => {
     $('etSave').disabled = true;
     try {
-      const upd = { task:$('etTask').value, details:$('etDetails').value, assignee:$('etEmp').value,
-        priority:$('etPrio').value, due:$('etDue').value };
+      const upd = Object.assign({ task:$('etTask').value, details:$('etDetails').value, assignee:$('etEmp').value,
+        priority:$('etPrio').value }, timeValues('et'));
       if (IS_ADMIN) { upd.approval = $('etApp').value; upd.sendNow = !!($('etSend') && $('etSend').checked); }
       data = await call('adminUpdateTask', token, id, upd);
       closeModal(); render(); toast(id + ' saved' + (upd.sendNow && data.emailed ? ', emailed to employee' : ''));
@@ -401,7 +462,7 @@ function renderEmployee(){
   const overdue = data.tasks.filter(t => t.overdue);
   $('appSub').textContent = open.length + ' open' + (overdue.length ? ' · ' + overdue.length + ' overdue' : '');
   const order = t => (t.status === 'Done' ? 2 : 0) + (t.overdue ? -1 : 0);
-  const list = data.tasks.slice().sort((a,b) => order(a) - order(b) || (a.due||'9999').localeCompare(b.due||'9999'));
+  const list = data.tasks.slice().sort((a,b) => order(a) - order(b) || (a.dueAtMs || 9e15) - (b.dueAtMs || 9e15) || (a.due||'9999').localeCompare(b.due||'9999'));
   $('main').innerHTML = `
     <div class="stats">
       <div class="stat"><div class="n">${open.length}</div><div class="l">Open tasks</div></div>
@@ -414,7 +475,7 @@ function renderEmployee(){
         <div class="t-title">${esc(t.task)}</div>
         ${t.details ? `<div class="t-sub" style="margin-top:4px">${esc(t.details)}</div>` : ''}
         <div class="meta"><span>${esc(t.id)}</span>${prioPill(t.priority)}
-          <span class="${t.overdue ? 'overdue' : ''}">${t.dueLabel ? 'Due ' + esc(t.dueLabel) : 'No due date'}${t.overdue ? ' (overdue)' : ''}</span></div>
+          <span class="${t.overdue ? 'overdue' : ''}">${t.dueLabel ? 'Due ' + esc(dueText(t)) : 'No due date'}</span>${countdownHtml(t)}${takenHtml(t)}</div>
         <div class="seg">${STATUSES.map(s => `<button type="button" data-st="${esc(s)}" class="${s===t.status?'on':''}">${esc(s)}</button>`).join('')}</div>
         <div class="field"><label>Progress: <span data-pv>${Math.round(t.progress*100)}</span>%</label>
           <input type="range" min="0" max="100" step="10" value="${Math.round(t.progress*100)}" data-pr></div>
@@ -434,7 +495,7 @@ function renderEmployee(){
       const btn = e.target; btn.disabled = true;
       try {
         data = await call('empUpdateTask', token, card.dataset.card, status, Number(pr.value)/100, card.querySelector('[data-rm]').value);
-        renderEmployee(); toast('Update saved');
+        renderEmployee(); tickCountdowns(); toast('Update saved');
       } catch (err) { toast(err.message, true); btn.disabled = false; }
     };
   });
@@ -474,11 +535,10 @@ function openNewTaskModal(preEmp){
         <div class="field"><label>Employee</label><select id="qtEmp" required>${options(emps, emps.includes(preEmp) ? preEmp : (emps.length === 1 ? emps[0] : ''), 'Select employee')}</select></div>
         <div class="field"><label>Priority</label><select id="qtPrio">${options(PRIORITIES, 'Medium')}</select></div>
       </div>
-      <div class="row">
-        <div class="field"><label>Due date</label><input type="date" id="qtDue" min="${esc(data.today)}"></div>
-      </div>
+      ${timeFields('qt')}
       ${addButtons('qt', true)}
     </form>`);
+  bindTimeFields('qt');
   $('qtTask').focus();
   $('qtCancel').onclick = closeModal;
   $('qtForm').onsubmit = async e => {
@@ -488,8 +548,8 @@ function openNewTaskModal(preEmp){
     const btns = $('qtForm').querySelectorAll('button[type=submit]'); btns.forEach(b => b.disabled = true);
     const who = $('qtEmp').value;
     try {
-      data = await call('adminAddTask', token, { task:$('qtTask').value, details:$('qtDetails').value, assignee:who,
-        priority:$('qtPrio').value, due:$('qtDue').value, approveNow:IS_ADMIN, sendNow });
+      data = await call('adminAddTask', token, Object.assign({ task:$('qtTask').value, details:$('qtDetails').value, assignee:who,
+        priority:$('qtPrio').value, approveNow:IS_ADMIN, sendNow }, timeValues('qt')));
       closeModal(); render(); toast(addedMsg(who, sendNow));
     } catch (err) { toast(err.message, true); btns.forEach(b => b.disabled = false); }
   };

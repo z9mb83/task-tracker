@@ -19,7 +19,6 @@ const MAX_FAILS = 5;            // failed logins before a 15-minute lockout
 const LOCK_MINUTES = 15;
 const PRIORITIES = ['High', 'Medium', 'Low'];
 const APPROVALS = ['Pending', 'Approved', 'Rejected', 'On Hold', 'Cancelled'];
-const CREATED_BY_COL = 15;        // Tasks!O: who added the task (Admin or a task manager's name)
 const STAFF = ['admin', 'manager'];
 const DECISION_DAYS = 7;          // email approve/reject links stay valid this long
 
@@ -182,14 +181,19 @@ function adminAddTask(token, t) {
   // Task managers can only submit for approval
   const approval = isAdmin && (t.approveNow || t.sendNow) ? 'Approved' : 'Pending';
   const due = parseDay_(t.due);
+  if (!due) throw new Error('Pick a date.');
+  const start = normStart_(t.startTime);
+  if (!start) throw new Error('Pick a start time.');
+  const limit = timeLimit_(t.limit);
   const createdBy = isAdmin ? 'Admin' : sess.name;
 
   const sh = tasksSheet_();
   const row = firstEmptyTaskRow_(sh);
-  sh.getRange(row, C.TASK, 1, 6).setValues([[task, String(t.details || '').trim(), assignee, priority, due || '', approval]]);
-  sh.getRange(row, CREATED_BY_COL).setValue(createdBy);
+  sh.getRange(row, C.TASK, 1, 6).setValues([[task, String(t.details || '').trim(), assignee, priority, due, approval]]);
+  sh.getRange(row, T.START).setNumberFormat('@');
+  sh.getRange(row, T.CREATED_BY, 1, 3).setValues([[createdBy, start, limit]]);
   syncNow();
-  const vals = sh.getRange(row, 1, 1, ADMIN_COLS).getValues()[0];
+  const vals = sh.getRange(row, 1, 1, ALL_COLS).getValues()[0];
   let emailed = 0;
   if (isAdmin && t.sendNow && vals[C.ID - 1]) emailed = sendNewTaskEmails_([vals], getSettings_());
   if (!isAdmin && vals[C.ID - 1]) notifyAdminsNewTask_(vals, createdBy);
@@ -225,6 +229,7 @@ function applyTaskUpdate_(id, t) {
   }
   if (t.approval !== undefined && !APPROVALS.includes(t.approval)) throw new Error('Unknown approval value.');
   if (t.priority !== undefined && !PRIORITIES.includes(t.priority)) throw new Error('Unknown priority.');
+  if (t.startTime !== undefined && !normStart_(t.startTime)) throw new Error('Pick a valid start time.');
   const wasApproved = cur[5] === 'Approved';
   const next = [
     t.task !== undefined ? String(t.task).trim() || cur[0] : cur[0],
@@ -235,10 +240,12 @@ function applyTaskUpdate_(id, t) {
     t.approval !== undefined ? t.approval : cur[5]
   ];
   sh.getRange(row, C.TASK, 1, 6).setValues([next]);
+  if (t.startTime !== undefined) sh.getRange(row, T.START).setNumberFormat('@').setValue(normStart_(t.startTime));
+  if (t.limit !== undefined) sh.getRange(row, T.LIMIT).setValue(timeLimit_(t.limit));
   syncNow();
   let emailed = 0;
   if (t.sendNow && next[5] === 'Approved' && !wasApproved) {
-    emailed = sendNewTaskEmails_([sh.getRange(row, 1, 1, ADMIN_COLS).getValues()[0]], getSettings_());
+    emailed = sendNewTaskEmails_([sh.getRange(row, 1, 1, ALL_COLS).getValues()[0]], getSettings_());
   }
   return { emailed: emailed };
 }
@@ -265,7 +272,8 @@ function notifyAdminsNewTask_(vals, createdBy) {
     '<div style="font-size:15px;font-weight:bold">' + esc_(vals[C.TASK - 1]) + '</div>' +
     (vals[C.DETAILS - 1] ? '<div style="color:#444;margin-top:6px;white-space:pre-wrap">' + esc_(vals[C.DETAILS - 1]) + '</div>' : '') +
     '<div style="color:#6b7487;font-size:13px;margin-top:8px">' + esc_(id) + ' &nbsp;|&nbsp; For: <b>' + esc_(vals[C.ASSIGNEE - 1]) + '</b>' +
-    ' &nbsp;|&nbsp; Priority: <b>' + esc_(vals[C.PRIORITY - 1]) + '</b> &nbsp;|&nbsp; Due: <b>' + (fmtDate_(vals[C.DUE - 1]) || 'No due date') + '</b></div></div>';
+    ' &nbsp;|&nbsp; Priority: <b>' + esc_(vals[C.PRIORITY - 1]) + '</b> &nbsp;|&nbsp; Due: <b>' + (fmtDue_(vals[T.DUE_AT - 1], vals[C.DUE - 1]) || 'No due date') + '</b>' +
+    (vals[T.LIMIT - 1] ? ' &nbsp;|&nbsp; Time limit: <b>' + vals[T.LIMIT - 1] + ' min</b>' : '') + '</div></div>';
   if (base) {
     html += '<p>' + btn('Approve &amp; send now', 'approve_now', '#1e8e4e') + btn('Approve (evening summary)', 'approve', '#2c5fb3') +
       btn('Reject', 'reject', '#c0392b') + '</p>' +
@@ -307,7 +315,7 @@ function decisionInfo(tok) {
   const t = readTasksForWeb_().find(x => x.id === id);
   if (!t) throw new Error('This task no longer exists.');
   return { id: t.id, task: t.task, details: t.details, assignee: t.assignee, priority: t.priority,
-           dueLabel: t.dueLabel, createdBy: t.createdBy, approval: t.approval };
+           dueLabel: t.dueLabel, limit: t.limit, createdBy: t.createdBy, approval: t.approval };
 }
 
 function decide(tok, action) {
@@ -502,11 +510,16 @@ function readTasksForWeb_() {
   if (last < 2) return [];
   const todayKey = dayKey_(new Date());
   const dt = d => d instanceof Date ? Utilities.formatDate(d, TZ, 'dd MMM yyyy, hh:mm a') : '';
-  const cols = Math.min(sh.getMaxColumns(), CREATED_BY_COL);
+  const nowMs = Date.now();
+  const cols = Math.min(sh.getMaxColumns(), ALL_COLS);
   return sh.getRange(2, 1, last - 1, cols).getValues()
+    .map(r => { while (r.length < ALL_COLS) r.push(''); return r; })
     .filter(r => r[C.ID - 1] && String(r[C.TASK - 1]).trim())
     .map(r => {
       const due = r[C.DUE - 1];
+      const dueAt = r[T.DUE_AT - 1] instanceof Date ? r[T.DUE_AT - 1]
+        : computeDueAt_(due, r[T.START - 1], r[T.LIMIT - 1]);
+      const startedAt = r[T.STARTED_AT - 1];
       const status = String(r[C.STATUS - 1] || '');
       const approval = String(r[C.APPROVAL - 1] || '');
       const completed = r[C.COMPLETED - 1];
@@ -518,7 +531,12 @@ function readTasksForWeb_() {
         assignee: String(r[C.ASSIGNEE - 1] || ''),
         priority: String(r[C.PRIORITY - 1] || ''),
         due: due instanceof Date ? dayKey_(due) : '',
-        dueLabel: fmtDate_(due),
+        dueLabel: fmtDue_(dueAt, due),
+        startTime: normStart_(r[T.START - 1]),
+        limit: Number(r[T.LIMIT - 1]) || '',
+        dueAtMs: dueAt instanceof Date ? dueAt.getTime() : 0,
+        startedAtMs: startedAt instanceof Date ? startedAt.getTime() : 0,
+        taken: typeof r[T.TAKEN - 1] === 'number' ? r[T.TAKEN - 1] : '',
         approval: approval,
         approvedOn: dt(r[C.APPROVED_ON - 1]),
         status: status,
@@ -527,18 +545,23 @@ function readTasksForWeb_() {
         updated: dt(r[C.UPDATED - 1]),
         completed: dt(completed),
         completedMs: completed instanceof Date ? completed.getTime() : 0,
-        overdue: approval === 'Approved' && status !== 'Done' && due instanceof Date && dayKey_(due) < todayKey,
-        createdBy: String(r[CREATED_BY_COL - 1] || '')
+        overdue: approval === 'Approved' && status !== 'Done' &&
+          (dueAt instanceof Date ? dueAt.getTime() < nowMs : due instanceof Date && dayKey_(due) < todayKey),
+        createdBy: String(r[T.CREATED_BY - 1] || '')
       };
     });
 }
 
-/** Tasks tab, with the "Created By" column added if it is missing. */
+/** Tasks tab, with the Created By and timing columns added if they are missing. */
 function tasksSheet_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(TASKS_TAB);
-  if (sh.getMaxColumns() < CREATED_BY_COL) sh.insertColumnsAfter(sh.getMaxColumns(), CREATED_BY_COL - sh.getMaxColumns());
-  if (!sh.getRange(1, CREATED_BY_COL).getValue()) sh.getRange(1, CREATED_BY_COL).setValue('Created By');
+  ensureTaskCols_(sh);
   return sh;
+}
+
+function timeLimit_(v) {
+  const n = Number(v);
+  return LIMITS.includes(n) ? n : DEFAULT_LIMIT;
 }
 
 function firstEmptyTaskRow_(sh) {

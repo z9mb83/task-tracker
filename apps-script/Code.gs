@@ -26,9 +26,15 @@ const C = {
   UPDATED: 13, COMPLETED: 14
 };
 const ADMIN_COLS = 14;
+// Ticket timing columns (added after Created By in column O)
+const T = { CREATED_BY: 15, START: 16, LIMIT: 17, DUE_AT: 18, STARTED_AT: 19, TAKEN: 20 };
+const ALL_COLS = 20;
+const TASK_HEADERS_EXTRA = ['Created By', 'Start Time', 'Time Limit (min)', 'Due At', 'Started At', 'Time Taken (min)'];
+const LIMITS = [30, 45, 60];
+const DEFAULT_LIMIT = 45;
 
 // Employee tab columns
-const EMP_HEADERS = ['Task ID', 'Task', 'Details', 'Priority', 'Due Date', 'Assigned On',
+const EMP_HEADERS = ['Task ID', 'Task', 'Details', 'Priority', 'Due', 'Assigned On',
                      'Status', 'Progress %', 'Remarks'];
 const E = { ID: 1, TASK: 2, DETAILS: 3, PRIORITY: 4, DUE: 5, ASSIGNED: 6,
             STATUS: 7, PROGRESS: 8, REMARKS: 9 };
@@ -109,7 +115,7 @@ function onAdminEdit(e) {
   const sh = e.range.getSheet();
   if (sh.getName() !== TASKS_TAB || e.range.getRow() < 2) return;
   const col = e.range.getColumn();
-  if (col >= C.TASK && col <= C.APPROVAL) syncNow();
+  if ((col >= C.TASK && col <= C.APPROVAL) || col === T.START || col === T.LIMIT) syncNow();
 }
 
 // ---------- Main sync ----------
@@ -124,9 +130,10 @@ function syncNow() {
     const now = new Date();
     const keepDays = Number(s['Keep done tasks visible (days)']) || 3;
 
+    ensureTaskCols_(tasksSh);
     const lastRow = tasksSh.getLastRow();
     if (lastRow < 2) return;
-    const data = tasksSh.getRange(2, 1, lastRow - 1, ADMIN_COLS).getValues();
+    const data = tasksSh.getRange(2, 1, lastRow - 1, ALL_COLS).getValues();
 
     // 1. IDs and approval timestamps
     let maxId = 0;
@@ -140,6 +147,8 @@ function syncNow() {
         r[C.ID - 1] = 'T-' + String(++maxId).padStart(4, '0');
         r[C.CREATED - 1] = now;
       }
+      // Due At = due date + start time + time limit
+      r[T.DUE_AT - 1] = computeDueAt_(r[C.DUE - 1], r[T.START - 1], r[T.LIMIT - 1]) || '';
       if (r[C.APPROVAL - 1] === 'Approved' && !r[C.APPROVED_ON - 1]) {
         r[C.APPROVED_ON - 1] = now;
         if (!r[C.STATUS - 1]) r[C.STATUS - 1] = 'Not Started';
@@ -162,11 +171,15 @@ function syncNow() {
       r[C.PROGRESS - 1] = u.progress;
       r[C.REMARKS - 1] = u.remarks;
       r[C.UPDATED - 1] = now;
+      if (u.status === 'In Progress' && !(r[T.STARTED_AT - 1] instanceof Date)) r[T.STARTED_AT - 1] = now;
+      if (u.status === 'Not Started') r[T.STARTED_AT - 1] = '';
       if (u.status === 'Done') {
         if (!r[C.COMPLETED - 1]) r[C.COMPLETED - 1] = now;
         if (u.progress === '' || u.progress < 1) r[C.PROGRESS - 1] = 1;
+        r[T.TAKEN - 1] = minutesTaken_(r);
       } else {
         r[C.COMPLETED - 1] = '';
+        r[T.TAKEN - 1] = '';
       }
     });
 
@@ -175,6 +188,8 @@ function syncNow() {
       .setValues(data.map(r => [r[C.ID - 1], r[C.CREATED - 1]]));
     tasksSh.getRange(2, C.APPROVED_ON, data.length, ADMIN_COLS - C.APPROVED_ON + 1)
       .setValues(data.map(r => r.slice(C.APPROVED_ON - 1, ADMIN_COLS)));
+    tasksSh.getRange(2, T.DUE_AT, data.length, 3)
+      .setValues(data.map(r => r.slice(T.DUE_AT - 1, T.TAKEN)));
 
     // 3. Push approved tasks to each employee tab
     const cutoff = new Date(now.getTime() - keepDays * 86400000);
@@ -182,6 +197,7 @@ function syncNow() {
       const isNew = !empSS.getSheetByName(m.name);
       const sh = getOrCreateEmpTab_(empSS, m.name);
       if (isNew) setUpNewEmployee_(empSS, sh, m, s);
+      upgradeEmpTab_(sh);
       // Re-read the tab right before writing so an edit made a moment ago is kept
       const current = readEmpTab_(sh);
       const rows = data
@@ -190,7 +206,9 @@ function syncNow() {
         .map(r => {
           const id = r[C.ID - 1];
           const cur = current[id];
-          return [id, r[C.TASK - 1], r[C.DETAILS - 1], r[C.PRIORITY - 1], r[C.DUE - 1],
+          const limit = Number(r[T.LIMIT - 1]) || '';
+          return [id, r[C.TASK - 1] + (limit ? ' (' + limit + ' min)' : ''), r[C.DETAILS - 1], r[C.PRIORITY - 1],
+                  r[T.DUE_AT - 1] instanceof Date ? r[T.DUE_AT - 1] : r[C.DUE - 1],
                   r[C.APPROVED_ON - 1],
                   cur ? cur.status : r[C.STATUS - 1],
                   cur ? cur.progress : r[C.PROGRESS - 1],
@@ -230,7 +248,8 @@ function sendNewTaskEmails_(rows, s) {
         (r[C.DETAILS - 1] ? '<div style="color:#444;margin-top:6px;white-space:pre-wrap">' + esc_(r[C.DETAILS - 1]) + '</div>' : '') +
         '<div style="color:#6b7487;font-size:13px;margin-top:8px">' + esc_(r[C.ID - 1]) +
         (r[C.PRIORITY - 1] ? ' &nbsp;|&nbsp; Priority: <b>' + esc_(r[C.PRIORITY - 1]) + '</b>' : '') +
-        ' &nbsp;|&nbsp; Due: <b>' + (fmtDate_(r[C.DUE - 1]) || 'No due date') + '</b></div></div>';
+        ' &nbsp;|&nbsp; Due: <b>' + (fmtDue_(r[T.DUE_AT - 1], r[C.DUE - 1]) || 'No due date') + '</b>' +
+        (r[T.LIMIT - 1] ? ' &nbsp;|&nbsp; Time limit: <b>' + r[T.LIMIT - 1] + ' min</b>' : '') + '</div></div>';
     });
     html += '<p><a href="' + link + '" style="background:#1f3864;color:#fff;padding:9px 16px;border-radius:6px;text-decoration:none;display:inline-block">Open my tasks</a></p>' +
       '<p style="color:#6b7487;font-size:12px">Update the status there as you work on it.</p>';
@@ -258,13 +277,15 @@ function sendDailyEmails() {
   const dateLabel = Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy');
 
   const isOpen = t => t.approval === 'Approved' && t.status !== 'Done';
-  const isOverdue = t => isOpen(t) && t.due instanceof Date && dayKey_(t.due) < todayKey;
+  const nowMs = Date.now();
+  const isOverdue = t => isOpen(t) && (t.dueAt instanceof Date ? t.dueAt.getTime() < nowMs
+                                       : t.due instanceof Date && dayKey_(t.due) < todayKey);
 
   // Employees
   if (String(s['Send employee emails']).toLowerCase() === 'yes') {
     team.filter(m => m.role === 'Employee' && m.email).forEach(m => {
       const mine = tasks.filter(t => t.assignee === m.name);
-      const open = mine.filter(isOpen).sort((a, b) => dueVal_(a.due) - dueVal_(b.due));
+      const open = mine.filter(isOpen).sort((a, b) => dueVal_(a.dueAt || a.due) - dueVal_(b.dueAt || b.due));
       const doneToday = mine.filter(t => t.completed instanceof Date && t.completed >= since);
       if (!open.length && !doneToday.length) return;
 
@@ -273,8 +294,9 @@ function sendDailyEmails() {
         '<p>Here is your list for tomorrow. You have <b>' + open.length + '</b> open task(s)' +
         (overdue.length ? ', <b style="color:#c00000">' + overdue.length + ' overdue</b>' : '') + '.</p>';
       if (open.length) {
-        html += table_(['ID', 'Task', 'Priority', 'Due', 'Status', 'Progress'],
-          open.map(t => [t.id, (t.approvedOn instanceof Date && t.approvedOn >= since ? 'NEW: ' : '') + t.task, t.priority, fmtDate_(t.due), t.status, pct_(t.progress)]),
+        html += table_(['ID', 'Task', 'Priority', 'Due', 'Time', 'Status'],
+          open.map(t => [t.id, (t.approvedOn instanceof Date && t.approvedOn >= since ? 'NEW: ' : '') + t.task, t.priority,
+            fmtDue_(t.dueAt, t.due), t.limit ? t.limit + ' min' : '', t.status]),
           open.map(t => isOverdue(t)));
       }
       if (doneToday.length) {
@@ -316,16 +338,17 @@ function sendDailyEmails() {
     ['Employee', 'Not Started', 'In Progress', 'Blocked', 'Overdue', 'Done (24h)'], perEmp);
   if (pending.length) html += '<h3>Waiting for approval</h3>' + table_(
     ['ID', 'Task', 'Assigned To', 'Priority', 'Due', 'Added by'],
-    pending.map(t => [t.id, t.task, t.assignee, t.priority, fmtDate_(t.due), t.createdBy]));
+    pending.map(t => [t.id, t.task, t.assignee, t.priority, fmtDue_(t.dueAt, t.due), t.createdBy]));
   if (overdue.length) html += '<h3>Overdue</h3>' + table_(
     ['ID', 'Task', 'Assigned To', 'Due', 'Status', 'Remarks'],
-    overdue.map(t => [t.id, t.task, t.assignee, fmtDate_(t.due), t.status, t.remarks]));
+    overdue.map(t => [t.id, t.task, t.assignee, fmtDue_(t.dueAt, t.due), t.status, t.remarks]));
   if (blocked.length) html += '<h3>Blocked</h3>' + table_(
     ['ID', 'Task', 'Assigned To', 'Remarks'],
     blocked.map(t => [t.id, t.task, t.assignee, t.remarks]));
   if (doneToday.length) html += '<h3>Completed in the last 24 hours</h3>' + table_(
-    ['ID', 'Task', 'Assigned To', 'Completed'],
-    doneToday.map(t => [t.id, t.task, t.assignee, Utilities.formatDate(t.completed, TZ, 'dd MMM, hh:mm a')]));
+    ['ID', 'Task', 'Assigned To', 'Completed', 'Time taken'],
+    doneToday.map(t => [t.id, t.task, t.assignee, Utilities.formatDate(t.completed, TZ, 'dd MMM, hh:mm a'),
+      t.taken !== '' && t.taken != null ? t.taken + ' min' + (t.limit ? ' / ' + t.limit : '') : '']));
   html += '<p><a href="' + adminUrl + '">Open the admin sheet</a></p>';
 
   sendMail_({ to: to, subject: brand + 'Daily task summary, ' + dateLabel, htmlBody: wrap_(html) });
@@ -340,7 +363,7 @@ function getOrCreateEmpTab_(empSS, name) {
     .setFontWeight('bold').setFontColor('#ffffff').setBackground('#1f3864').setWrap(true);
   sh.setFrozenRows(1);
   const rows = sh.getMaxRows() - 1;
-  sh.getRange(2, E.DUE, rows, 1).setNumberFormat('dd-mmm-yyyy');
+  sh.getRange(2, E.DUE, rows, 1).setNumberFormat('dd-mmm h:mm am/pm');
   sh.getRange(2, E.ASSIGNED, rows, 1).setNumberFormat('dd-mmm-yyyy');
   sh.getRange(2, E.PROGRESS, rows, 1).setNumberFormat('0%').setHorizontalAlignment('center');
   sh.getRange(2, E.STATUS, rows, 3).setBackground('#fff9c4');
@@ -352,12 +375,12 @@ function getOrCreateEmpTab_(empSS, name) {
   sh.getRange(2, E.PROGRESS, rows, 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireNumberBetween(0, 1).setAllowInvalid(false)
       .setHelpText('Enter a percentage, e.g. 50%').build());
-  [80, 260, 300, 80, 105, 105, 115, 95, 280].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  [80, 260, 300, 80, 130, 105, 115, 95, 280].forEach((w, i) => sh.setColumnWidth(i + 1, w));
 
   const all = sh.getRange(2, 1, rows, EMP_COLS);
   const rules = [
     SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=AND($E2<>"",$E2<TODAY(),$G2<>"Done")')
+      .whenFormulaSatisfied('=AND($E2<>"",$E2<NOW(),$G2<>"Done")')
       .setFontColor('#c00000').setRanges([all]).build(),
     SpreadsheetApp.newConditionalFormatRule()
       .whenFormulaSatisfied('=$G2="Done"')
@@ -458,14 +481,80 @@ function getAdminTasks_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(TASKS_TAB);
   const last = sh.getLastRow();
   if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, Math.min(sh.getMaxColumns(), 15)).getValues()
+  const cols = Math.min(sh.getMaxColumns(), ALL_COLS);
+  return sh.getRange(2, 1, last - 1, cols).getValues()
+    .map(r => { while (r.length < ALL_COLS) r.push(''); return r; })
     .filter(r => r[C.ID - 1])
     .map(r => ({
       id: r[C.ID - 1], task: r[C.TASK - 1], assignee: r[C.ASSIGNEE - 1], priority: r[C.PRIORITY - 1],
       due: r[C.DUE - 1], approval: r[C.APPROVAL - 1], status: r[C.STATUS - 1],
       progress: r[C.PROGRESS - 1], remarks: r[C.REMARKS - 1], completed: r[C.COMPLETED - 1],
-      approvedOn: r[C.APPROVED_ON - 1], createdBy: r[14] || ''
+      approvedOn: r[C.APPROVED_ON - 1], createdBy: r[T.CREATED_BY - 1] || '',
+      dueAt: r[T.DUE_AT - 1], limit: Number(r[T.LIMIT - 1]) || '', taken: r[T.TAKEN - 1]
     }));
+}
+
+// ---------- Ticket timing ----------
+/** Adds the Created By + timing columns (O:T) to the Tasks tab if they are missing. */
+function ensureTaskCols_(sh) {
+  if (sh.getMaxColumns() < ALL_COLS) sh.insertColumnsAfter(sh.getMaxColumns(), ALL_COLS - sh.getMaxColumns());
+  const hdr = sh.getRange(1, T.CREATED_BY, 1, TASK_HEADERS_EXTRA.length);
+  const cur = hdr.getValues()[0];
+  if (cur.some((v, i) => !v)) hdr.setValues([TASK_HEADERS_EXTRA.map((h, i) => cur[i] || h)]);
+}
+
+/** "11:00", "9:30", "2:15 pm" -> { h, m } (24h), or null. */
+function parseStart_(v) {
+  if (v instanceof Date) return { h: v.getHours(), m: v.getMinutes() };
+  const x = String(v || '').trim().toLowerCase().match(/^(\d{1,2})[:.](\d{2})\s*(am|pm)?$/);
+  if (!x) return null;
+  let h = Number(x[1]); const m = Number(x[2]);
+  if (x[3] === 'pm' && h < 12) h += 12;
+  if (x[3] === 'am' && h === 12) h = 0;
+  return h < 24 && m < 60 ? { h: h, m: m } : null;
+}
+function normStart_(v) {
+  const p = parseStart_(v);
+  return p ? String(p.h).padStart(2, '0') + ':' + String(p.m).padStart(2, '0') : '';
+}
+
+/** Due date + start time + time limit (minutes) -> Date in IST, or null. */
+function computeDueAt_(day, start, limit) {
+  const p = parseStart_(start);
+  if (!(day instanceof Date) || !p) return null;
+  const startAt = Utilities.parseDate(dayKey_(day) + ' ' + p.h + ':' + p.m, TZ, 'yyyy-MM-dd H:m');
+  return new Date(startAt.getTime() + (Number(limit) || DEFAULT_LIMIT) * 60000);
+}
+
+/** Minutes from start to completion: actual start if the employee pressed In Progress, else the scheduled start. */
+function minutesTaken_(r) {
+  const done = r[C.COMPLETED - 1];
+  if (!(done instanceof Date)) return '';
+  let from = r[T.STARTED_AT - 1];
+  if (!(from instanceof Date) && r[T.DUE_AT - 1] instanceof Date) {
+    from = new Date(r[T.DUE_AT - 1].getTime() - (Number(r[T.LIMIT - 1]) || DEFAULT_LIMIT) * 60000);
+  }
+  if (!(from instanceof Date) || done < from) return '';
+  return Math.max(1, Math.round((done - from) / 60000));
+}
+
+function fmtDue_(dueAt, day) {
+  return dueAt instanceof Date ? Utilities.formatDate(dueAt, TZ, 'dd MMM, h:mm a') : fmtDate_(day);
+}
+
+/** Older employee tabs: show Due as date + time and flag overdue by the clock. */
+function upgradeEmpTab_(sh) {
+  if (sh.getRange(1, E.DUE).getValue() === 'Due') return;
+  sh.getRange(1, E.DUE).setValue('Due');
+  sh.getRange(2, E.DUE, sh.getMaxRows() - 1, 1).setNumberFormat('dd-mmm h:mm am/pm');
+  sh.setColumnWidth(E.DUE, 130);
+  const all = sh.getRange(2, 1, sh.getMaxRows() - 1, EMP_COLS);
+  sh.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND($E2<>"",$E2<NOW(),$G2<>"Done")')
+      .setFontColor('#c00000').setRanges([all]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$G2="Done"')
+      .setFontColor('#6aa84f').setStrikethrough(true).setRanges([all]).build()
+  ]);
 }
 
 // ---------- Small utilities ----------

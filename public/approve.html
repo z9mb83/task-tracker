@@ -61,7 +61,7 @@
       <div class="t-title">${esc(t.task)}</div>
       ${t.details ? `<div class="t-sub" style="margin-top:6px;white-space:pre-wrap;max-width:none">${esc(t.details)}</div>` : ''}
       <div class="meta"><span>${esc(t.id)}</span><span>For <b>${esc(t.assignee)}</b></span>
-        <span>Priority <b>${esc(t.priority || '-')}</b></span><span>Due <b>${esc(t.dueLabel || 'none')}</b></span>
+        <span>Priority <b>${esc(t.priority || '-')}</b></span><span>Due <b>${esc(t.dueLabel || 'none')}</b>${t.limit ? ' · ' + esc(t.limit) + ' min' : ''}</span>
         ${t.createdBy ? `<span>Added by <b>${esc(t.createdBy)}</b></span>` : ''}</div>
       <div class="choices">
         <button class="btn ok ${picked==='approve_now'?'picked':''}" data-a="approve_now">Approve &amp; send now <span style="font-weight:400;opacity:.85">· employee is emailed straight away</span></button>

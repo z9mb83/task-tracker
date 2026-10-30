@@ -20,6 +20,11 @@
 | M | Last Updated | Script |
 | N | Completed On | Script |
 | O | Created By | Dashboard (Admin, or the task manager's name) |
+| P | Start Time | Admin / task manager (e.g. 11:00) |
+| Q | Time Limit (min) | Admin / task manager (30, 45 or 60; default 45) |
+| R | Due At | Script: date + start time + time limit |
+| S | Started At | Script: when the employee first sets In Progress |
+| T | Time Taken (min) | Script: Done time minus Started At (or the scheduled start) |
 
 ### Team
 | Col | Header | Values |
@@ -51,5 +56,5 @@ Formulas only: pending approval, overdue, done today, and a per-employee table.
 
 - **How to use** tab with instructions (read only).
 - One tab per active employee, created by the script, columns:
-  Task ID, Task, Details, Priority, Due Date, Assigned On, **Status**, **Progress %**, **Remarks**.
+  Task ID, Task (with time limit), Details, Priority, Due (date + time), Assigned On, **Status**, **Progress %**, **Remarks**.
   Only the bold columns are editable, and only by that employee.

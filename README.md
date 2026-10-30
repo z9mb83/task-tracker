@@ -3,6 +3,7 @@
 A ticketing system for a small team, built on Google Sheets and Google Apps Script.
 
 - **Admins** add tasks, assign them to employees and approve them.
+- **Tickets are timed:** each task has a date, start time and a 30 / 45 / 60 min limit. Employees see a live countdown; admins see time taken vs limit.
 - **Task managers** add and edit tasks; the admin approves them by email or on the dashboard.
 - **Employees** see only their approved tasks and update status, progress and remarks.
 - **Everyone** gets a daily email. Employees get their open tasks; admins get a summary.
