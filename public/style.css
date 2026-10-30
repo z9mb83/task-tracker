@@ -304,3 +304,12 @@ html.m .day-phs{grid-template-columns:1fr}
 html.m .day-ph .cam-box{max-height:42vh}
 .day-phs.one{grid-template-columns:minmax(0,420px);justify-content:center}
 .cal-o{font-size:10px;color:var(--info);font-weight:600}
+
+/* ---------- manager review ---------- */
+.review-top{border-left:4px solid var(--warn)}
+.review-box{background:var(--warn-bg);border-radius:10px;padding:12px 14px;margin:10px 0 4px}
+.review-box.ok{background:var(--ok-bg)}
+.review-box textarea{min-height:60px;background:#fff}
+.review-log{margin-top:10px;font-size:12px;color:var(--muted);border-top:1px solid rgba(0,0,0,.08);padding-top:8px;white-space:pre-wrap}
+.sent-back{background:var(--bad-bg);border-left:3px solid var(--bad);border-radius:8px;padding:8px 10px;margin:0 0 10px;font-size:13px}
+.sent-back b{color:var(--bad)} .sent-back div{margin-top:3px;white-space:pre-wrap}

@@ -116,6 +116,7 @@ If you change the env vars later, redeploy from the Vercel dashboard so they tak
 | Task manager | `/task-manager` | Add tasks (they go to the admin for approval), edit or cancel any task. |
 | Admin | Email, Overview (top card) or Approvals | Approve & send now, Approve (evening summary), Hold or Reject. |
 | Admin | Dashboard > Team | Add (PIN is emailed), deactivate, reset PIN, or remove people (deletes PIN, email and sheet access). |
+| Task manager / Admin | Overview > "Done, waiting for your review" | Every Done ticket waits for review: Reviewed ✓, or Send back with a note (reopens it, emails the employee, keeps the time worked). |
 | Employee | `/employee` or their sheet tab | Set status, progress and remarks; see a live countdown. Done locks the ticket. |
 | Employee | `/employee`, top card | Check in / Check out with a selfie, at the office. Shows hours worked so far. |
 | Admin | Dashboard > Attendance | Who's in today (with photos), monthly hours, late / left early / auto check-out. |

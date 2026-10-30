@@ -18,7 +18,7 @@ const API_FUNCTIONS = [
   'adminSetEmployeeActive', 'adminResetPin', 'adminRemoveEmployee', 'adminSyncNow',
   'empData', 'empUpdateTask',
   'managerLogin', 'decisionInfo', 'decide',
-  'adminDecideChange', 'adminReopen',
+  'adminDecideChange', 'adminReopen', 'reviewTask',
   'empCheck', 'empAttendance', 'adminAttendance', 'adminAttPhoto'
 ];
 

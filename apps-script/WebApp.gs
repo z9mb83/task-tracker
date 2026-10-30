@@ -143,7 +143,8 @@ function adminData(token) {
     overdue: tasks.filter(t => t.overdue).length,
     blocked: tasks.filter(t => open(t) && t.status === 'Blocked').length,
     doneToday: tasks.filter(t => t.completedMs && t.completedMs >= since).length,
-    changes: tasks.filter(t => t.changeReq).length
+    changes: tasks.filter(t => t.changeReq).length,
+    review: tasks.filter(t => t.review === 'awaiting' && t.approval === 'Approved').length
   };
   const perEmployee = team.filter(m => m.role === 'Employee' && m.active).map(m => {
     const mine = tasks.filter(t => t.assignee === m.name);
@@ -456,17 +457,13 @@ function notifyEmployeeOfChange_(before, after, diff) {
   return sent;
 }
 
-// ---------- Reopen (admin only) ----------
-function adminReopen(token, id) {
-  requireSession_(token, 'admin');
-  const sh = tasksSheet_();
-  const row = findTaskRow_(sh, id);
-  if (!row) throw new Error('Task ' + id + ' not found.');
-  const v = sh.getRange(row, 1, 1, ALL_COLS).getValues()[0];
-  if (v[C.STATUS - 1] !== 'Done') throw new Error(id + ' is not Done.');
+// ---------- Reopen / review ----------
+/** Puts a Done task back to In Progress, keeping the time worked so far. by: who did it, shown in the log. */
+function reopenTask_(sh, row, v, by, why) {
+  const id = String(v[C.ID - 1]);
   const when = Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy, h:mm a');
   const log = String(v[T.REOPENED - 1] || '');
-  sh.getRange(row, T.REOPENED).setNumberFormat('@').setValue((log ? log + '; ' : '') + 'Reopened by Admin ' + when);
+  sh.getRange(row, T.REOPENED).setNumberFormat('@').setValue((log ? log + '; ' : '') + (why || 'Reopened') + ' by ' + by + ' ' + when);
   // Remember the time worked so far; after the rework, Time Taken = this + the rework only
   const workedSoFar = typeof v[T.TAKEN - 1] === 'number' ? v[T.TAKEN - 1] : (Number(minutesTaken_(v)) || 0);
   const now = new Date();
@@ -475,6 +472,7 @@ function adminReopen(token, id) {
   sh.getRange(row, C.COMPLETED).setValue('');
   sh.getRange(row, T.TAKEN).setValue('');
   sh.getRange(row, T.STARTED_AT).setValue(now);   // rework clock starts at the reopen
+  sh.getRange(row, T.REVIEWED_BY, 1, 2).setValues([['', '']]);   // needs a fresh review once Done again
   // The employee tab still says Done; switch it back so the next sync doesn't re-close the task
   const tab = SpreadsheetApp.openById(getSettings_()['Employee sheet ID']).getSheetByName(String(v[C.ASSIGNEE - 1]));
   if (tab && tab.getLastRow() > 1) {
@@ -482,8 +480,76 @@ function adminReopen(token, id) {
     const i = ids.indexOf(id);
     if (i >= 0) tab.getRange(i + 2, E.STATUS).setValue('In Progress');
   }
+}
+
+function adminReopen(token, id) {
+  requireSession_(token, 'admin');
+  const sh = tasksSheet_();
+  ensureTaskCols_(sh);
+  const row = findTaskRow_(sh, id);
+  if (!row) throw new Error('Task ' + id + ' not found.');
+  const v = sh.getRange(row, 1, 1, ALL_COLS).getValues()[0];
+  if (v[C.STATUS - 1] !== 'Done') throw new Error(id + ' is not Done.');
+  reopenTask_(sh, row, v, 'Admin');
   syncNow();
   return adminData(token);
+}
+
+/**
+ * Manager review of a Done ticket (admin or any task manager).
+ * action 'approve' -> Reviewed By / On are filled in.
+ * action 'sendback' -> note required; the ticket goes back to In Progress and the employee is emailed.
+ */
+function reviewTask(token, id, action, note) {
+  const sess = requireSession_(token, STAFF);
+  const by = sess.role === 'admin' ? 'Admin' : sess.name;
+  note = String(note || '').trim().slice(0, 1000);
+  if (action !== 'approve' && action !== 'sendback') throw new Error('Unknown review action.');
+  if (action === 'sendback' && !note) throw new Error('Write what needs to change before sending it back.');
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new Error('Busy, please try again in a moment.');
+  let emailed = false;
+  try {
+    const sh = tasksSheet_();
+    ensureTaskCols_(sh);
+    const row = findTaskRow_(sh, id);
+    if (!row) throw new Error('Task ' + id + ' not found.');
+    const v = sh.getRange(row, 1, 1, ALL_COLS).getValues()[0];
+    if (v[C.STATUS - 1] !== 'Done') throw new Error(id + ' is not Done any more.');
+    if (v[T.REVIEWED_BY - 1]) throw new Error(id + ' was already reviewed by ' + v[T.REVIEWED_BY - 1] + '.');
+    const when = Utilities.formatDate(new Date(), TZ, 'dd MMM, h:mm a');
+    const notes = String(v[T.REVIEW_NOTES - 1] || '');
+    if (action === 'approve') {
+      sh.getRange(row, T.REVIEWED_BY, 1, 2).setValues([[by, new Date()]]);
+      if (note) sh.getRange(row, T.REVIEW_NOTES).setNumberFormat('@').setValue((notes ? notes + '\n' : '') + when + ' · ' + by + ': reviewed ✓ ' + note);
+    } else {
+      sh.getRange(row, T.REVIEW_NOTES).setNumberFormat('@').setValue((notes ? notes + '\n' : '') + when + ' · ' + by + ': sent back: ' + note);
+      reopenTask_(sh, row, v, by, 'Sent back');
+      emailed = notifySentBack_(v, by, note);
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  if (action === 'sendback') syncNow();
+  const d = adminData(token);
+  d.emailed = emailed;
+  return d;
+}
+
+function notifySentBack_(v, by, note) {
+  const s = getSettings_();
+  const m = getTeam_().find(x => x.name === String(v[C.ASSIGNEE - 1]) && x.role === 'Employee');
+  if (!m || !m.email) return false;
+  const brand = s['Company name'] ? s['Company name'] + ' ' : '';
+  const id = String(v[C.ID - 1]);
+  try {
+    sendMail_({ to: m.email, subject: brand + id + ' sent back for changes',
+      htmlBody: wrap_('<p><b>' + esc_(id) + ': ' + esc_(String(v[C.TASK - 1])) + '</b> was reviewed by ' + esc_(by) +
+        ' and needs changes before it is accepted:</p><blockquote style="border-left:3px solid #c0392b;margin:8px 0;padding:6px 12px;background:#fdf1ef">' +
+        esc_(note).replace(/\n/g, '<br>') + '</blockquote><p>It is back on your list as In Progress. Mark it Done again when it is fixed.</p>' +
+        '<p><a href="' + employeeLink_(s) + '">Open my tasks</a></p>') });
+    return true;
+  } catch (e) { Logger.log(e); return false; }
 }
 
 // ---------- Approve / reject from email ----------
@@ -807,6 +873,10 @@ function readTasksForWeb_() {
         changeReq: (function (req) { return req ? { by: req.by, at: req.at, cancel: !!req.cancel, lines: changeLines_(req) } : null; })(readChangeReq_(r[T.CHANGE_REQ - 1])),
         reopened: String(r[T.REOPENED - 1] || ''),
         links: parseLinks_(r[T.LINKS - 1]),
+        reviewedBy: String(r[T.REVIEWED_BY - 1] || ''),
+        reviewedOn: dt(r[T.REVIEWED_ON - 1]),
+        reviewNotes: String(r[T.REVIEW_NOTES - 1] || ''),
+        review: status === 'Done' ? (r[T.REVIEWED_BY - 1] ? 'reviewed' : 'awaiting') : '',
         state: taskState_(approval, status)
       };
     });

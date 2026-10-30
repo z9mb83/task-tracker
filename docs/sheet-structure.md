@@ -28,6 +28,9 @@
 | U | Change Request | Script: pending change/cancel request from a task manager (JSON) |
 | V | Reopened | Script: log of admin reopens |
 | W | Links | Employee, via dashboard: work links (Drive, Canva, screenshots), one per line |
+| X | Reviewed By | Dashboard: task manager or Admin who accepted the Done ticket (empty = awaiting review) |
+| Y | Reviewed On | Dashboard: when it was accepted |
+| Z | Review Notes | Dashboard: log of reviews and send-backs with notes |
 
 ### Team
 | Col | Header | Values |

@@ -27,10 +27,11 @@ const C = {
 };
 const ADMIN_COLS = 14;
 // Ticket timing columns (added after Created By in column O)
-const T = { CREATED_BY: 15, START: 16, LIMIT: 17, DUE_AT: 18, STARTED_AT: 19, TAKEN: 20, CHANGE_REQ: 21, REOPENED: 22, LINKS: 23 };
-const ALL_COLS = 23;
+const T = { CREATED_BY: 15, START: 16, LIMIT: 17, DUE_AT: 18, STARTED_AT: 19, TAKEN: 20, CHANGE_REQ: 21, REOPENED: 22, LINKS: 23,
+            REVIEWED_BY: 24, REVIEWED_ON: 25, REVIEW_NOTES: 26 };
+const ALL_COLS = 26;
 const TASK_HEADERS_EXTRA = ['Created By', 'Start Time', 'Time Limit (min)', 'Due At', 'Started At', 'Time Taken (min)',
-                            'Change Request', 'Reopened', 'Links'];
+                            'Change Request', 'Reopened', 'Links', 'Reviewed By', 'Reviewed On', 'Review Notes'];
 const MAX_LINKS = 10;
 // Columns that are frozen once a task is Done, Rejected or Cancelled
 const LOCKED_COLS = [C.TASK, C.DETAILS, C.ASSIGNEE, C.PRIORITY, C.DUE, C.APPROVAL, T.START, T.LIMIT];
@@ -360,6 +361,11 @@ function sendDailyEmails() {
   if (pending.length) html += '<h3>Waiting for approval</h3>' + table_(
     ['ID', 'Task', 'Assigned To', 'Priority', 'Due', 'Added by'],
     pending.map(t => [t.id, t.task, t.assignee, t.priority, fmtDue_(t.dueAt, t.due), t.createdBy]));
+  const toReview = tasks.filter(t => t.status === 'Done' && !t.reviewedBy && t.approval === 'Approved');
+  if (toReview.length) html += '<h3>Done, waiting for review (' + toReview.length + ')</h3>' + table_(
+    ['ID', 'Task', 'Done by', 'Completed', 'Links'],
+    toReview.map(t => [t.id, t.task, t.assignee, t.completed instanceof Date ? Utilities.formatDate(t.completed, TZ, 'dd MMM, hh:mm a') : '',
+      { html: t.links.map((u, i) => '<a href="' + esc_(u) + '">Link ' + (i + 1) + '</a>').join(' ') }]));
   if (overdue.length) html += '<h3>Overdue</h3>' + table_(
     ['ID', 'Task', 'Assigned To', 'Due', 'Status', 'Remarks'],
     overdue.map(t => [t.id, t.task, t.assignee, fmtDue_(t.dueAt, t.due), t.status, t.remarks]));
@@ -513,22 +519,28 @@ function getAdminTasks_() {
       progress: r[C.PROGRESS - 1], remarks: r[C.REMARKS - 1], completed: r[C.COMPLETED - 1],
       approvedOn: r[C.APPROVED_ON - 1], createdBy: r[T.CREATED_BY - 1] || '',
       dueAt: r[T.DUE_AT - 1], limit: limitVal_(r[T.LIMIT - 1]), taken: typeof r[T.TAKEN - 1] === 'number' ? r[T.TAKEN - 1] : '',
-      links: parseLinks_(r[T.LINKS - 1])
+      links: parseLinks_(r[T.LINKS - 1]), reviewedBy: String(r[T.REVIEWED_BY - 1] || '')
     }));
 }
 
 // ---------- Ticket timing ----------
 /** Adds the Created By + timing columns (O:T) to the Tasks tab if they are missing. */
 function ensureTaskCols_(sh) {
-  if (sh.getMaxColumns() < ALL_COLS) {
-    sh.insertColumnsAfter(sh.getMaxColumns(), ALL_COLS - sh.getMaxColumns());
-    // New columns copy their neighbour's date format; give each the right one
+  const had = sh.getMaxColumns();
+  if (had < ALL_COLS) {
+    sh.insertColumnsAfter(had, ALL_COLS - had);
+    // New columns copy their neighbour's format; give each the right one
     const n = sh.getMaxRows() - 1;
-    sh.getRange(2, T.CREATED_BY, n, 2).setNumberFormat('@');          // Created By, Start Time: text
-    sh.getRange(2, T.LIMIT, n, 1).setNumberFormat('0');               // minutes
-    sh.getRange(2, T.DUE_AT, n, 2).setNumberFormat('dd-mmm h:mm am/pm');
-    sh.getRange(2, T.TAKEN, n, 1).setNumberFormat('0');
-    sh.getRange(2, T.CHANGE_REQ, n, 3).setNumberFormat('@');
+    if (had < T.LINKS) {
+      sh.getRange(2, T.CREATED_BY, n, 2).setNumberFormat('@');          // Created By, Start Time: text
+      sh.getRange(2, T.LIMIT, n, 1).setNumberFormat('0');               // minutes
+      sh.getRange(2, T.DUE_AT, n, 2).setNumberFormat('dd-mmm h:mm am/pm');
+      sh.getRange(2, T.TAKEN, n, 1).setNumberFormat('0');
+      sh.getRange(2, T.CHANGE_REQ, n, 3).setNumberFormat('@');
+    }
+    sh.getRange(2, T.REVIEWED_BY, n, 1).setNumberFormat('@');
+    sh.getRange(2, T.REVIEWED_ON, n, 1).setNumberFormat('dd-mmm h:mm am/pm');
+    sh.getRange(2, T.REVIEW_NOTES, n, 1).setNumberFormat('@');
   }
   const hdr = sh.getRange(1, T.CREATED_BY, 1, TASK_HEADERS_EXTRA.length);
   const cur = hdr.getValues()[0];

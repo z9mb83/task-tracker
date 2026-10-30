@@ -138,7 +138,7 @@ function renderInner(){
   if (STAFF) {
     if (!IS_ADMIN && ['approvals','team','attendance'].includes(currentTab)) currentTab = 'overview';
     $('appTitle').textContent = (data.brand ? data.brand + ' ' : '') + (IS_ADMIN ? 'Admin dashboard' : 'Task manager · ' + (data.me || ''));
-    $('appSub').textContent = data.stats.pending + ' waiting for approval · ' + data.stats.overdue + ' overdue';
+    $('appSub').textContent = data.stats.pending + ' waiting for approval · ' + (data.stats.review || 0) + ' to review · ' + data.stats.overdue + ' overdue';
     const waiting = data.stats.pending + (data.stats.changes || 0);
     const pc = $('pendingCount'); pc.textContent = waiting; pc.classList.toggle('hidden', !waiting);
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === currentTab));
@@ -159,6 +159,7 @@ function renderOverview(){
   const attention = data.tasks.filter(t => t.overdue || (t.approval==='Approved' && t.status==='Blocked'));
   const pending = IS_ADMIN ? data.tasks.filter(t => t.approval === 'Pending') : [];
   const changes = IS_ADMIN ? data.tasks.filter(t => t.changeReq) : [];
+  const toReview = data.tasks.filter(t => t.review === 'awaiting' && t.approval === 'Approved');
   $('main').innerHTML = `
     ${pending.length ? `<div class="card approvals-top">
       <h3>Waiting for your approval <span class="count-pill">${pending.length}</span></h3>
@@ -168,12 +169,17 @@ function renderOverview(){
       <h3>Change requests <span class="count-pill">${changes.length}</span></h3>
       ${changeList(changes)}
     </div>` : ''}
+    ${toReview.length ? `<div class="card approvals-top review-top">
+      <h3>Done, waiting for your review <span class="count-pill">${toReview.length}</span></h3>
+      ${reviewTable(toReview)}
+    </div>` : ''}
     <div class="stats">
       <div class="stat warn ${IS_ADMIN ? 'click' : ''}" ${IS_ADMIN ? 'data-goto="approvals" title="Open Approvals"' : ''}><div class="n">${s.pending}</div><div class="l">Waiting for approval</div></div>
       <div class="stat"><div class="n">${s.open}</div><div class="l">Open tasks</div></div>
       <div class="stat bad"><div class="n">${s.overdue}</div><div class="l">Overdue</div></div>
       <div class="stat bad"><div class="n">${s.blocked}</div><div class="l">Blocked</div></div>
       <div class="stat ok"><div class="n">${s.doneToday}</div><div class="l">Done in last 24h</div></div>
+      <div class="stat warn click" data-goto-filter="Awaiting review" title="Show tickets waiting for review"><div class="n">${s.review || 0}</div><div class="l">Waiting for review</div></div>
     </div>
     <div class="card"><h3>By employee</h3><div class="table-wrap"><table class="rt">
       <tr><th>Employee</th><th>Not started</th><th>In progress</th><th>Blocked</th><th>Overdue</th><th>Done</th><th>Pending approval</th></tr>
@@ -185,6 +191,8 @@ function renderOverview(){
   bindTaskRows();
   bindApprovalButtons();
   bindChangeButtons();
+  bindReviewButtons();
+  document.querySelectorAll('[data-goto-filter]').forEach(el => el.onclick = () => { filters.status = el.dataset.gotoFilter; currentTab = 'tasks'; render(); window.scrollTo(0, 0); });
 }
 
 function taskTable(list, emptyMsg){
@@ -198,7 +206,7 @@ function taskTable(list, emptyMsg){
       <td data-label="Due" class="${t.overdue ? 'overdue' : ''}">${esc(dueText(t))}${countdownHtml(t)}</td>
       <td>${prioPill(t.priority)}</td>
       <td>${approvalPill(t.approval)}${t.changeReq ? ' <span class="pill p-info">Change pending</span>' : ''}</td>
-      <td class="st">${statusPill(t.status)}${t.status === 'Done' ? takenHtml(t) : t.approval==='Approved' ? bar(t.progress) : ''}</td>
+      <td class="st">${statusPill(t.status)}${reviewPill(t)}${t.status === 'Done' ? takenHtml(t) : t.approval==='Approved' ? bar(t.progress) : ''}</td>
       <td class="hide-sm full">${t.remarks ? `<div class="t-sub">${esc(t.remarks)}</div>` : ''}</td>
     </tr>`).join('')}
   </table></div>`;
@@ -279,7 +287,8 @@ function renderTasks(){
   const list = data.tasks.filter(t =>
     (!filters.emp || t.assignee === filters.emp) &&
     (!filters.approval || t.approval === filters.approval) &&
-    (!filters.status || (filters.status === 'Overdue' ? t.overdue : t.status === filters.status)) &&
+    (!filters.status || (filters.status === 'Overdue' ? t.overdue : filters.status === 'Awaiting review' ? t.review === 'awaiting'
+      : filters.status === 'Reviewed' ? t.review === 'reviewed' : t.status === filters.status)) &&
     (!q || (t.task + ' ' + t.details + ' ' + t.id + ' ' + t.remarks + ' ' + t.createdBy).toLowerCase().includes(q))
   ).reverse();
   $('main').innerHTML = `<div class="card">
@@ -287,7 +296,7 @@ function renderTasks(){
       <div class="field search"><label>Search</label><input type="text" id="fq" value="${esc(filters.q)}" placeholder="Task, ID, remark or who added it"></div>
       <div class="field"><label>Employee</label><select id="femp">${options(emps, filters.emp, 'All employees')}</select></div>
       <div class="field"><label>Approval</label><select id="fapp">${options(APPROVALS, filters.approval, 'Any')}</select></div>
-      <div class="field"><label>Status</label><select id="fst">${options(STATUSES.concat(['Overdue']), filters.status, 'Any')}</select></div>
+      <div class="field"><label>Status</label><select id="fst">${options(STATUSES.concat(['Overdue', 'Awaiting review', 'Reviewed']), filters.status, 'Any')}</select></div>
     </div>
     <div class="muted" style="margin-bottom:8px">${list.length} task(s). Click a task to edit it.</div>
     ${taskTable(list, 'No tasks match these filters.')}
@@ -339,6 +348,88 @@ function renderApprovals(){
   bindApprovalButtons();
   bindChangeButtons();
 }
+// ---------- manager review of Done tickets ----------
+function reviewPill(t){
+  if (t.review === 'awaiting') return ' <span class="pill p-warn" title="Done, waiting for a manager to review">Awaiting review</span>';
+  if (t.review === 'reviewed') return ` <span class="pill p-ok" title="Reviewed by ${esc(t.reviewedBy)}${t.reviewedOn ? ', ' + esc(t.reviewedOn) : ''}">Reviewed ✓</span>`;
+  return '';
+}
+/** The latest "sent back" note, shown to the employee on a reopened ticket. */
+function lastSentBack(t){
+  const lines = String(t.reviewNotes || '').split('\n').filter(l => / sent back: /.test(l));
+  if (!lines.length) return null;
+  const l = lines[lines.length - 1], m = l.match(/^(.*?) · (.*?): sent back: ([\s\S]*)$/);
+  return m ? { when: m[1], by: m[2], note: m[3] } : { when: '', by: '', note: l };
+}
+function sentBackHtml(t){
+  const b = t.status !== 'Done' && lastSentBack(t);
+  return b ? `<div class="sent-back"><b>Sent back${b.by ? ' by ' + esc(b.by) : ''}</b>${b.when ? ` <span class="muted">· ${esc(b.when)}</span>` : ''}<div>${esc(b.note)}</div></div>` : '';
+}
+function reviewTable(list){
+  return `<div class="table-wrap"><table class="rt">
+    <tr><th>ID</th><th>Task</th><th>Employee</th><th>Completed</th><th>Work</th><th></th></tr>
+    ${list.map(t => `<tr>
+      <td class="muted tid">${esc(t.id)}</td>
+      <td class="primary click" data-id="${esc(t.id)}"><div class="t-title">${esc(t.task)}</div>${t.remarks ? `<div class="t-sub clamp">${esc(t.remarks)}</div>` : ''}${addedBy(t)}</td>
+      <td data-label="By">${esc(t.assignee)}</td>
+      <td data-label="Completed">${esc(t.completed || '-')}${takenHtml(t)}</td>
+      <td data-label="Work">${linksHtml(t, true) || '<span class="muted">No links</span>'}</td>
+      <td class="btns full">
+        <button class="btn ok small" data-review="approve" data-id="${esc(t.id)}">Reviewed ✓</button>
+        <button class="btn bad small" data-review="sendback" data-id="${esc(t.id)}">Send back</button>
+      </td></tr>`).join('')}
+  </table></div>`;
+}
+function bindReviewButtons(){
+  document.querySelectorAll('td[data-id]').forEach(td => td.onclick = () => openTask(td.dataset.id));
+  document.querySelectorAll('button[data-review]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    if (b.dataset.review === 'sendback') return openSendBack(b.dataset.id);
+    doReview(b.dataset.id, 'approve', '', b);
+  });
+}
+async function doReview(id, action, note, btn){
+  if (btn) btn.disabled = true;
+  try {
+    data = await call('reviewTask', token, id, action, note);
+    closeModal(); render();
+    toast(action === 'approve' ? id + ' marked Reviewed ✓' : id + ' sent back to ' + ((data.tasks.find(t => t.id === id) || {}).assignee || 'the employee') + (data.emailed ? ' (emailed)' : ''));
+  } catch (err) { toast(err.message, true); if (btn) btn.disabled = false; }
+}
+function openSendBack(id){
+  const t = data.tasks.find(x => x.id === id); if (!t) return;
+  modal(`<h3>Send back ${esc(t.id)}</h3>
+    <p style="margin:0 0 10px"><b>${esc(t.task)}</b> · ${esc(t.assignee)}</p>
+    ${linksHtml(t)}
+    <div class="field"><label>What needs to change?</label><textarea id="sbNote" maxlength="1000" placeholder="e.g. Logo is too small on posts 2 and 3; use the new brand colours"></textarea></div>
+    <div class="muted" style="font-size:12.5px">The ticket goes back to <b>In Progress</b> and ${esc(t.assignee)} is emailed this note. The time already worked is kept.</div>
+    <div class="actions"><button class="btn ghost" type="button" id="sbCancel">Cancel</button><button class="btn bad" type="button" id="sbSend">Send back</button></div>`);
+  $('sbNote').focus();
+  $('sbCancel').onclick = closeModal;
+  $('sbSend').onclick = () => {
+    const n = $('sbNote').value.trim();
+    if (!n) { toast('Write what needs to change.', true); return; }
+    doReview(id, 'sendback', n, $('sbSend'));
+  };
+}
+/** Review block inside a Done ticket's popup. */
+function reviewSection(t){
+  const history = String(t.reviewNotes || '').split('\n').filter(Boolean);
+  const hist = history.length ? `<div class="review-log">${history.map(l => `<div>${esc(l)}</div>`).join('')}</div>` : '';
+  if (t.review === 'reviewed') return `<div class="review-box ok"><span class="pill p-ok">Reviewed ✓</span> by <b>${esc(t.reviewedBy)}</b>${t.reviewedOn ? ' · ' + esc(t.reviewedOn) : ''}${hist}</div>`;
+  return `<div class="review-box"><div style="margin-bottom:8px"><span class="pill p-warn">Awaiting review</span> Check the work, then accept it or send it back.</div>
+    <div class="field" style="margin-bottom:8px"><label>Note <span class="muted" style="font-weight:400">(needed to send back, optional when accepting)</span></label><textarea id="rvNote" maxlength="1000"></textarea></div>
+    <div class="actions" style="justify-content:flex-start;margin-top:0"><button class="btn ok" type="button" id="rvOk">Reviewed ✓</button><button class="btn bad" type="button" id="rvBack">Send back</button></div>${hist}</div>`;
+}
+function bindReviewSection(t){
+  if ($('rvOk')) $('rvOk').onclick = () => doReview(t.id, 'approve', $('rvNote').value.trim(), $('rvOk'));
+  if ($('rvBack')) $('rvBack').onclick = () => {
+    const n = $('rvNote').value.trim();
+    if (!n) { toast('Write what needs to change in the note first.', true); $('rvNote').focus(); return; }
+    doReview(t.id, 'sendback', n, $('rvBack'));
+  };
+}
+
 function changeList(list){
   return list.map(t => `<div class="change-item">
     <div class="t-title">${esc(t.id)} · ${esc(t.task)}</div>
@@ -511,10 +602,12 @@ function openTask(id){
       <div class="meta" style="display:flex;gap:8px 14px;flex-wrap:wrap;font-size:13px;margin-bottom:10px">
         <span><span class="muted">For</span> ${esc(t.assignee)}</span><span><span class="muted">Due</span> ${esc(dueText(t))}</span>${prioPill(t.priority)}</div>
       ${infoBox(t)}
+      ${t.status === 'Done' ? reviewSection(t) : ''}
       <div class="actions">
-        ${IS_ADMIN && t.status === 'Done' ? '<button class="btn ghost" id="etReopen" style="margin-right:auto">Reopen</button>' : ''}
+        ${IS_ADMIN && t.status === 'Done' && t.review !== 'awaiting' ? '<button class="btn ghost" id="etReopen" style="margin-right:auto">Reopen</button>' : ''}
         <button class="btn" id="etClose">Close</button></div>`);
     $('etClose').onclick = closeModal;
+    bindReviewSection(t);
     if ($('etReopen')) $('etReopen').onclick = async () => {
       const b = $('etReopen');
       if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'Click again to reopen ' + id; b.classList.add('bad'); return; }
@@ -598,8 +691,11 @@ function renderEmployee(){
           <span class="${t.overdue ? 'overdue' : ''}">${t.dueLabel ? 'Due ' + esc(dueText(t)) : 'No due date'}</span>${countdownHtml(t)}${takenHtml(t)}</div>
         ${t.status === 'Done' ? `
         <div class="done-lock"><span class="pill p-ok">Done</span><span class="muted">${t.completed ? 'Completed ' + esc(t.completed) + ' · ' : ''}locked</span></div>
+        <div style="margin-top:6px">${t.review === 'reviewed' ? `<span class="pill p-ok">Reviewed ✓</span> <span class="muted" style="font-size:12px">by ${esc(t.reviewedBy)}</span>`
+          : '<span class="pill p-warn">Waiting for manager review</span>'}</div>
         ${t.remarks ? `<div class="t-sub" style="margin-top:8px;max-width:none"><b>Remarks:</b> ${esc(t.remarks)}</div>` : ''}
         ${linksHtml(t)}` : `
+        ${sentBackHtml(t)}
         <div class="seg">${STATUSES.map(s => `<button type="button" data-st="${esc(s)}" class="${s===t.status?'on':''}">${esc(s)}</button>`).join('')}</div>
         <div class="field"><label>Progress: <span data-pv>${Math.round(t.progress*100)}</span>%</label>
           <input type="range" min="0" max="100" step="10" value="${Math.round(t.progress*100)}" data-pr></div>

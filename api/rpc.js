@@ -19,7 +19,7 @@ const ALLOWED = new Set([
   'empData', 'empUpdateTask',
   'tmLogin',                    // handled here: PIN checked, then managerLogin in Apps Script
   'decisionInfo', 'decide',     // approve/reject links from the admin email (signed token)
-  'adminDecideChange', 'adminReopen',
+  'adminDecideChange', 'adminReopen', 'reviewTask',
   'empCheck', 'empAttendance', 'adminAttendance', 'adminAttPhoto'   // attendance
 ]);
 
