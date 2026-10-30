@@ -533,7 +533,7 @@ function readTasksForWeb_() {
         due: due instanceof Date ? dayKey_(due) : '',
         dueLabel: fmtDue_(dueAt, due),
         startTime: normStart_(r[T.START - 1]),
-        limit: Number(r[T.LIMIT - 1]) || '',
+        limit: limitVal_(r[T.LIMIT - 1]),
         dueAtMs: dueAt instanceof Date ? dueAt.getTime() : 0,
         startedAtMs: startedAt instanceof Date ? startedAt.getTime() : 0,
         taken: typeof r[T.TAKEN - 1] === 'number' ? r[T.TAKEN - 1] : '',

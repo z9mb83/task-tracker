@@ -199,14 +199,14 @@ function todayStr(){ const d = new Date(); return d.getFullYear() + '-' + pad2(d
 function nextSlot(){ const d = new Date(Date.now() + 15*60000); const m = Math.ceil(d.getMinutes()/15)*15; d.setMinutes(m, 0, 0); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
 function fmtClock(hhmm){ const [h, m] = hhmm.split(':').map(Number); return (h % 12 || 12) + ':' + pad2(m) + ' ' + (h < 12 ? 'AM' : 'PM'); }
 function fmtMins(n){ n = Math.round(n); if (n < 60) return n + ' min'; const h = Math.floor(n/60), m = n % 60; return h + ' h' + (m ? ' ' + m + ' min' : ''); }
-function dueText(t){ return (t.dueLabel || 'No due date') + (t.limit ? ' · ' + t.limit + ' min' : ''); }
+function dueText(t){ return (t.dueLabel || 'No due date') + (t.limit > 0 && t.limit <= 600 ? ' · ' + t.limit + ' min' : ''); }
 function takenHtml(t){
   if (t.status !== 'Done' || t.taken === '' || t.taken == null) return '';
   const over = t.limit && t.taken > t.limit;
   return `<span class="taken ${over ? 'over' : 'ok'}">Took ${fmtMins(t.taken)}${t.limit ? ' / ' + t.limit : ''}</span>`;
 }
 function countdownHtml(t){
-  if (!t.dueAtMs || t.status === 'Done' || t.approval !== 'Approved') return '';
+  if (!t.dueAtMs || t.dueAtMs < 1577836800000 || t.status === 'Done' || t.approval !== 'Approved') return '';   // ignore dates before 2020
   return `<span class="cd" data-due="${t.dueAtMs}"></span>`;
 }
 function tickCountdowns(){

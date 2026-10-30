@@ -206,7 +206,7 @@ function syncNow() {
         .map(r => {
           const id = r[C.ID - 1];
           const cur = current[id];
-          const limit = Number(r[T.LIMIT - 1]) || '';
+          const limit = limitVal_(r[T.LIMIT - 1]);
           return [id, r[C.TASK - 1] + (limit ? ' (' + limit + ' min)' : ''), r[C.DETAILS - 1], r[C.PRIORITY - 1],
                   r[T.DUE_AT - 1] instanceof Date ? r[T.DUE_AT - 1] : r[C.DUE - 1],
                   r[C.APPROVED_ON - 1],
@@ -490,17 +490,32 @@ function getAdminTasks_() {
       due: r[C.DUE - 1], approval: r[C.APPROVAL - 1], status: r[C.STATUS - 1],
       progress: r[C.PROGRESS - 1], remarks: r[C.REMARKS - 1], completed: r[C.COMPLETED - 1],
       approvedOn: r[C.APPROVED_ON - 1], createdBy: r[T.CREATED_BY - 1] || '',
-      dueAt: r[T.DUE_AT - 1], limit: Number(r[T.LIMIT - 1]) || '', taken: r[T.TAKEN - 1]
+      dueAt: r[T.DUE_AT - 1], limit: limitVal_(r[T.LIMIT - 1]), taken: typeof r[T.TAKEN - 1] === 'number' ? r[T.TAKEN - 1] : ''
     }));
 }
 
 // ---------- Ticket timing ----------
 /** Adds the Created By + timing columns (O:T) to the Tasks tab if they are missing. */
 function ensureTaskCols_(sh) {
-  if (sh.getMaxColumns() < ALL_COLS) sh.insertColumnsAfter(sh.getMaxColumns(), ALL_COLS - sh.getMaxColumns());
+  if (sh.getMaxColumns() < ALL_COLS) {
+    sh.insertColumnsAfter(sh.getMaxColumns(), ALL_COLS - sh.getMaxColumns());
+    // New columns copy their neighbour's date format; give each the right one
+    const n = sh.getMaxRows() - 1;
+    sh.getRange(2, T.CREATED_BY, n, 2).setNumberFormat('@');          // Created By, Start Time: text
+    sh.getRange(2, T.LIMIT, n, 1).setNumberFormat('0');               // minutes
+    sh.getRange(2, T.DUE_AT, n, 2).setNumberFormat('dd-mmm h:mm am/pm');
+    sh.getRange(2, T.TAKEN, n, 1).setNumberFormat('0');
+  }
   const hdr = sh.getRange(1, T.CREATED_BY, 1, TASK_HEADERS_EXTRA.length);
   const cur = hdr.getValues()[0];
   if (cur.some((v, i) => !v)) hdr.setValues([TASK_HEADERS_EXTRA.map((h, i) => cur[i] || h)]);
+}
+
+/** Time limit cell -> minutes. Copes with a cell accidentally formatted as a date (45 shown as 13-Feb-1900). */
+function limitVal_(v) {
+  if (v instanceof Date) v = Math.round((v.getTime() - new Date(1899, 11, 30).getTime()) / 86400000);
+  const n = Number(v);
+  return n > 0 && n <= 600 ? n : '';
 }
 
 /** "11:00", "9:30", "2:15 pm" -> { h, m } (24h), or null. */
@@ -523,7 +538,7 @@ function computeDueAt_(day, start, limit) {
   const p = parseStart_(start);
   if (!(day instanceof Date) || !p) return null;
   const startAt = Utilities.parseDate(dayKey_(day) + ' ' + p.h + ':' + p.m, TZ, 'yyyy-MM-dd H:m');
-  return new Date(startAt.getTime() + (Number(limit) || DEFAULT_LIMIT) * 60000);
+  return new Date(startAt.getTime() + (limitVal_(limit) || DEFAULT_LIMIT) * 60000);
 }
 
 /** Minutes from start to completion: actual start if the employee pressed In Progress, else the scheduled start. */
@@ -532,7 +547,7 @@ function minutesTaken_(r) {
   if (!(done instanceof Date)) return '';
   let from = r[T.STARTED_AT - 1];
   if (!(from instanceof Date) && r[T.DUE_AT - 1] instanceof Date) {
-    from = new Date(r[T.DUE_AT - 1].getTime() - (Number(r[T.LIMIT - 1]) || DEFAULT_LIMIT) * 60000);
+    from = new Date(r[T.DUE_AT - 1].getTime() - (limitVal_(r[T.LIMIT - 1]) || DEFAULT_LIMIT) * 60000);
   }
   if (!(from instanceof Date) || done < from) return '';
   return Math.max(1, Math.round((done - from) / 60000));
