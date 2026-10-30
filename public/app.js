@@ -6,7 +6,7 @@ let BRAND = '';
 
 // Phone layout: .m on <html> below 700px. ?phone=1 previews it on a desktop browser.
 const PHONE_PREVIEW = /[?&]phone=1\b/.test(location.search);
-const mq = window.matchMedia('(max-width: 700px)');
+const mq = window.matchMedia ? window.matchMedia('(max-width: 700px)') : { matches: window.innerWidth <= 700 };
 function setMobile(){ document.documentElement.classList.toggle('m', mq.matches || PHONE_PREVIEW); }
 setMobile();
 if (mq.addEventListener) mq.addEventListener('change', setMobile);
