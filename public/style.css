@@ -262,3 +262,9 @@ html.m .link-add input{font-size:16px}
 .photo-chip:hover{background:var(--info-bg)}
 html.m .att-card{flex-direction:column;align-items:stretch;text-align:left}
 html.m .att-btn{width:100%}
+.thumbs{white-space:nowrap}
+.att-thumb{display:inline-flex;flex-direction:column;align-items:center;gap:3px;border:1px solid var(--line);background:#fff;border-radius:10px;padding:4px;margin:0 6px 4px 0;cursor:pointer;vertical-align:top}
+.att-thumb:hover{border-color:var(--info);background:var(--info-bg)}
+.att-thumb img,.att-thumb .ph{width:88px;height:88px;border-radius:7px;object-fit:cover;display:flex;align-items:center;justify-content:center;background:var(--grey-bg);font-size:20px}
+.att-thumb .cap{font-size:11.5px;color:var(--muted)}
+html.m .att-thumb img,html.m .att-thumb .ph{width:110px;height:110px}

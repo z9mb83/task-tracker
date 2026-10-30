@@ -781,6 +781,8 @@ async function renderAttendance(){
   const inNow = att.todayRows.filter(r => r.open);
   const monthLabel = new Date(att.month + '-01T00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
   const notes = r => [r.late ? '<span class="pill p-warn">Late</span>' : '', r.flags ? `<span class="t-sub">${esc(r.flags)}</span>` : ''].join(' ');
+  const thumb = (id, label) => id ? `<button type="button" class="att-thumb" data-photo="${esc(id)}" data-thumb="${esc(id)}" title="Open photo">
+      <span class="ph">📷</span><span class="cap">${esc(label)}</span></button>` : '';
   const photoBtn = (id, label) => id ? `<button type="button" class="photo-chip" data-photo="${esc(id)}">${esc(label)}</button>` : '';
   const months = []; { const d = new Date(); for (let i = 0; i < 6; i++) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); months.push(x.getFullYear() + '-' + pad2(x.getMonth() + 1)); } }
   $('main').innerHTML = `
@@ -800,7 +802,7 @@ async function renderAttendance(){
         <td class="primary t-title">${esc(r.name)} ${r.open ? '<span class="pill p-ok">In</span>' : ''}</td>
         <td data-label="In">${esc(r.inLabel)}</td><td data-label="Out">${esc(r.outLabel || '-')}</td>
         <td data-label="Worked">${esc(fmtMins(r.workedMin))}</td>
-        <td data-label="Photos">${photoBtn(r.inPhoto, 'In photo')} ${photoBtn(r.outPhoto, 'Out photo')}</td>
+        <td data-label="Photos" class="thumbs">${thumb(r.inPhoto, 'In ' + r.inLabel)}${thumb(r.outPhoto, 'Out ' + r.outLabel)}</td>
         <td class="full">${notes(r)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No active employees.</td></tr>'}
     </table></div></div>
     <div class="card"><div class="row" style="align-items:flex-end;margin-bottom:10px">
@@ -824,7 +826,8 @@ async function renderAttendance(){
       </table></div></details>
     <div class="muted" style="font-size:12px;margin-top:10px">Office ${esc(o.hours)} · late after ${esc(o.lateAfter)} · auto check-out ${esc(o.autoOut)} · photos are deleted on the 15th of the next month.</div></div>`;
   $('attMonth').onchange = async e => { attMonth = e.target.value; att._stale = true; renderAttendance(); };
-  document.querySelectorAll('[data-photo]').forEach(b => b.onclick = () => showPhoto(b.dataset.photo, b.closest('tr').querySelector('.t-title').textContent.trim()));
+  document.querySelectorAll('[data-photo]').forEach(b => b.onclick = () => showPhoto(b.dataset.photo, b.closest('tr').querySelector('.t-title').firstChild.textContent.trim()));
+  loadThumbs();
   if ($('setOffice')) $('setOffice').onclick = async () => {
     const loc = await getLocation();
     if (loc.error) { toast(loc.error, true); return; }
@@ -833,12 +836,30 @@ async function renderAttendance(){
     catch (err) { toast(err.message, true); }
   };
 }
+/** Fetches a photo without the full-screen busy overlay (used for thumbnails). */
+async function fetchPhoto(id){
+  if (photoCache[id]) return photoCache[id];
+  const r = await fetch('/api/rpc', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ fn:'adminAttPhoto', args:[token, id] }) });
+  const j = await r.json().catch(() => ({ ok:false }));
+  if (!j.ok) throw new Error(j.error || 'Could not load the photo.');
+  return (photoCache[id] = j.result);
+}
+async function loadThumbs(){
+  const els = [...document.querySelectorAll('[data-thumb]')];
+  const next = async () => {
+    const el = els.shift(); if (!el) return;
+    try { const p = await fetchPhoto(el.dataset.thumb); if (el.isConnected) el.querySelector('.ph').outerHTML = `<img src="${p.dataUrl}" alt="">`; }
+    catch (e) { if (el.isConnected) el.querySelector('.ph').textContent = '⚠'; }
+    return next();
+  };
+  await Promise.all([next(), next(), next()]);   // three at a time
+}
 async function showPhoto(id, who){
   modal(`<h3>${esc(who)}</h3><div class="cam-box"><div class="muted" id="phMsg" style="padding:40px;text-align:center">Loading photo…</div><img id="phImg" class="hidden" alt="Attendance photo"></div>
     <div class="muted" id="phName" style="font-size:12px;margin-top:6px"></div>
     <div class="actions" style="justify-content:flex-end"><button class="btn ghost" type="button" onclick="closeModal()">Close</button></div>`);
   try {
-    const p = photoCache[id] || (photoCache[id] = await call('adminAttPhoto', token, id));
+    const p = photoCache[id] || await fetchPhoto(id);
     if (!$('phImg')) return;
     $('phImg').src = p.dataUrl; $('phImg').classList.remove('hidden'); $('phMsg').remove(); $('phName').textContent = p.name;
   } catch (err) { delete photoCache[id]; if ($('phMsg')) $('phMsg').textContent = err.message; }
