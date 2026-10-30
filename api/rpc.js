@@ -23,8 +23,8 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ ok: false, error: 'Method not allowed.' });
   }
 
-  const url = process.env.APPS_SCRIPT_URL;
-  const key = process.env.API_SECRET;
+  const url = (process.env.APPS_SCRIPT_URL || '').trim();
+  const key = (process.env.API_SECRET || '').replace(/\s+/g, '');
   if (!url || !key) {
     return res.status(500).json({ ok: false, error: 'Dashboard is not configured yet (APPS_SCRIPT_URL / API_SECRET missing in Vercel).' });
   }
