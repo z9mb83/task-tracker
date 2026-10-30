@@ -7,14 +7,25 @@
  * Environment variables (Vercel > Project > Settings > Environment Variables):
  *   APPS_SCRIPT_URL  the Apps Script web app URL (ends in /exec)
  *   API_SECRET       from the Admin sheet: Task System > Set up Vercel connection
+ *   TASK_MANAGER_PIN shared PIN for the /task-manager page (kept only here, never in the sheet)
  */
+
+const crypto = require('crypto');
 
 const ALLOWED = new Set([
   'publicInfo', 'login', 'logout',
   'adminData', 'adminAddTask', 'adminUpdateTask', 'adminAddEmployee',
   'adminSetEmployeeActive', 'adminResetPin', 'adminRemoveEmployee', 'adminSyncNow',
-  'empData', 'empUpdateTask'
+  'empData', 'empUpdateTask',
+  'tmLogin',                    // handled here: PIN checked, then managerLogin in Apps Script
+  'decisionInfo', 'decide'      // approve/reject links from the admin email (signed token)
 ]);
+
+function samePin(a, b) {
+  const x = crypto.createHash('sha256').update(String(a)).digest();
+  const y = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(x, y);
+}
 
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -34,6 +45,16 @@ module.exports = async function handler(req, res) {
   const fn = body && body.fn;
   const args = body && Array.isArray(body.args) ? body.args : [];
   if (!ALLOWED.has(fn)) return res.status(400).json({ ok: false, error: 'Unknown action.' });
+
+  // Task manager login: the shared PIN lives only in Vercel. Apps Script gets the
+  // name and whether the PIN matched (so it can count failed attempts).
+  let callFn = fn, callArgs = args;
+  if (fn === 'tmLogin') {
+    const pin = (process.env.TASK_MANAGER_PIN || '').trim();
+    if (!pin) return res.status(500).json({ ok: false, error: 'Task manager PIN is not set in Vercel (TASK_MANAGER_PIN).' });
+    callFn = 'managerLogin';
+    callArgs = [String(args[0] || '').slice(0, 60), samePin(String(args[1] || '').trim(), pin)];
+  }
   if (JSON.stringify(args).length > 20000) return res.status(413).json({ ok: false, error: 'Request too large.' });
 
   try {
@@ -41,7 +62,7 @@ module.exports = async function handler(req, res) {
     const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ key, fn, args }),
+      body: JSON.stringify({ key, fn: callFn, args: callArgs }),
       redirect: 'follow'
     });
     const text = await r.text();

@@ -316,8 +316,8 @@ function sendDailyEmails() {
   html += '<h3>By employee</h3>' + table_(
     ['Employee', 'Not Started', 'In Progress', 'Blocked', 'Overdue', 'Done (24h)'], perEmp);
   if (pending.length) html += '<h3>Waiting for approval</h3>' + table_(
-    ['ID', 'Task', 'Assigned To', 'Priority', 'Due'],
-    pending.map(t => [t.id, t.task, t.assignee, t.priority, fmtDate_(t.due)]));
+    ['ID', 'Task', 'Assigned To', 'Priority', 'Due', 'Added by'],
+    pending.map(t => [t.id, t.task, t.assignee, t.priority, fmtDate_(t.due), t.createdBy]));
   if (overdue.length) html += '<h3>Overdue</h3>' + table_(
     ['ID', 'Task', 'Assigned To', 'Due', 'Status', 'Remarks'],
     overdue.map(t => [t.id, t.task, t.assignee, fmtDate_(t.due), t.status, t.remarks]));
@@ -459,13 +459,13 @@ function getAdminTasks_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(TASKS_TAB);
   const last = sh.getLastRow();
   if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, ADMIN_COLS).getValues()
+  return sh.getRange(2, 1, last - 1, Math.min(sh.getMaxColumns(), 15)).getValues()
     .filter(r => r[C.ID - 1])
     .map(r => ({
       id: r[C.ID - 1], task: r[C.TASK - 1], assignee: r[C.ASSIGNEE - 1], priority: r[C.PRIORITY - 1],
       due: r[C.DUE - 1], approval: r[C.APPROVAL - 1], status: r[C.STATUS - 1],
       progress: r[C.PROGRESS - 1], remarks: r[C.REMARKS - 1], completed: r[C.COMPLETED - 1],
-      approvedOn: r[C.APPROVED_ON - 1]
+      approvedOn: r[C.APPROVED_ON - 1], createdBy: r[14] || ''
     }));
 }
 

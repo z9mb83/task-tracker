@@ -3,6 +3,7 @@
 A ticketing system for a small team, built on Google Sheets and Google Apps Script.
 
 - **Admins** add tasks, assign them to employees and approve them.
+- **Task managers** add and edit tasks; the admin approves them by email or on the dashboard.
 - **Employees** see only their approved tasks and update status, progress and remarks.
 - **Everyone** gets a daily email. Employees get their open tasks; admins get a summary.
 - **Web dashboard on Vercel** with a password-protected admin page (`/admin`) and a PIN login for employees (`/`).
@@ -26,8 +27,10 @@ Task Tracker - Admin (Google Sheet)          Task Tracker - Employees (Google Sh
                      ^
                      |  POST {key, fn, args}
 Vercel  /api/rpc  ---+   (adds the secret; browser never sees it)
-        /admin    <- admin dashboard
-        /         <- employee dashboard
+        /admin          <- admin dashboard (password)
+        /task-manager   <- task manager dashboard (name + shared PIN)
+        /approve        <- confirm page for approve/reject links in admin emails
+        /               <- employee dashboard (email + PIN)
 ```
 
 The Admin sheet is the single source of truth. Employees write only to their own
@@ -76,7 +79,8 @@ so the `/exec` URL keeps working.
 
 ### 4. Vercel
 1. On vercel.com: **Add New > Project**, import this GitHub repo. Framework preset: **Other**. No build command.
-2. Add Environment Variables: `APPS_SCRIPT_URL` and `API_SECRET` (from step 3).
+2. Add Environment Variables: `APPS_SCRIPT_URL` and `API_SECRET` (from step 3), and `TASK_MANAGER_PIN`
+   (the shared PIN for task managers; it is stored only in Vercel).
 3. Deploy. Your links:
    - Admin: `https://<project>.vercel.app/admin`
    - Employees: `https://<project>.vercel.app/`
@@ -89,6 +93,8 @@ If you change the env vars later, redeploy from the Vercel dashboard so they tak
 - The admin password and employee PINs are stored only as salted SHA-256 hashes in Script Properties.
 - After 5 wrong attempts, logins for that account are locked for 15 minutes.
 - Sessions expire after 8 hours.
+- Approve/reject links in emails are signed with the API secret, expire after 7 days, and open a confirm page (so email link scanners can't approve anything).
+- The task manager PIN never reaches the browser or the sheet: Vercel checks it and tells Apps Script only whether it matched.
 - The web app runs as the sheet owner, so keep the Admin sheet shared with admins only.
 - Employees can edit only columns G to I on their own tab in the Employees sheet.
 - The Apps Script URL and API secret live only in Vercel env vars; the browser talks to `/api/rpc`, which only allows the dashboard's own actions.
@@ -99,7 +105,8 @@ If you change the env vars later, redeploy from the Vercel dashboard so they tak
 | Who | Where | What |
 |---|---|---|
 | Admin | Dashboard > New task | Pick employee, priority, due date. Tick "Approve now" to send it straight away. |
-| Admin | Dashboard > Approvals | Approve, hold or reject tasks added by other admins in the sheet. |
+| Task manager | `/task-manager` | Add tasks (they go to the admin for approval), edit or cancel any task. |
+| Admin | Email or Dashboard > Approvals | Approve & send now, Approve (evening summary), Hold or Reject. |
 | Admin | Dashboard > Team | Add or deactivate people, reset PINs. |
 | Employee | Dashboard or their sheet tab | Set status, progress and remarks. |
 | Everyone | Email, daily at the hour in Settings | Open tasks and summary. |

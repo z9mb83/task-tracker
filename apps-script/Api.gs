@@ -16,7 +16,8 @@ const API_FUNCTIONS = [
   'publicInfo', 'login', 'logout',
   'adminData', 'adminAddTask', 'adminUpdateTask', 'adminAddEmployee',
   'adminSetEmployeeActive', 'adminResetPin', 'adminRemoveEmployee', 'adminSyncNow',
-  'empData', 'empUpdateTask'
+  'empData', 'empUpdateTask',
+  'managerLogin', 'decisionInfo', 'decide'
 ];
 
 function doPost(e) {

@@ -18,7 +18,10 @@ const SESSION_HOURS = 8;
 const MAX_FAILS = 5;            // failed logins before a 15-minute lockout
 const LOCK_MINUTES = 15;
 const PRIORITIES = ['High', 'Medium', 'Low'];
-const APPROVALS = ['Pending', 'Approved', 'Rejected', 'On Hold'];
+const APPROVALS = ['Pending', 'Approved', 'Rejected', 'On Hold', 'Cancelled'];
+const CREATED_BY_COL = 15;        // Tasks!O: who added the task (Admin or a task manager's name)
+const STAFF = ['admin', 'manager'];
+const DECISION_DAYS = 7;          // email approve/reject links stay valid this long
 
 // ---------- Web app entry ----------
 // The dashboard lives on Vercel. Opening the Apps Script URL directly only shows a pointer to it;
@@ -92,7 +95,8 @@ function requireSession_(token, role) {
   const raw = token ? CacheService.getScriptCache().get('sess_' + token) : null;
   if (!raw) throw new Error('SESSION_EXPIRED');
   const s = JSON.parse(raw);
-  if (role && s.role !== role) throw new Error('Not allowed.');
+  const allowed = Array.isArray(role) ? role : (role ? [role] : null);
+  if (allowed && !allowed.includes(s.role)) throw new Error('Not allowed.');
   if (s.role === 'employee') {
     // Re-check the employee is still active on every call
     const m = getTeamAll_().find(x => x.name === s.name);
@@ -101,16 +105,37 @@ function requireSession_(token, role) {
   return s;
 }
 
-// ---------- Admin API ----------
+/**
+ * Task manager login. Called only by the Vercel proxy, which checks the shared
+ * task-manager PIN (stored in Vercel) and passes the result as pinOk.
+ */
+function managerLogin(name, pinOk) {
+  name = String(name || '').trim().replace(/\s+/g, ' ');
+  const cache = CacheService.getScriptCache();
+  const fails = Number(cache.get('fail_manager') || 0);
+  if (fails >= 10) throw new Error('Too many wrong attempts. Try again in ' + LOCK_MINUTES + ' minutes.');
+  if (pinOk !== true) {
+    cache.put('fail_manager', String(fails + 1), LOCK_MINUTES * 60);
+    throw new Error('Wrong PIN.');
+  }
+  if (!name || name.length > 40) throw new Error('Enter your name (up to 40 characters).');
+  cache.remove('fail_manager');
+  const token = Utilities.getUuid();
+  cache.put('sess_' + token, JSON.stringify({ role: 'manager', name: name }), SESSION_HOURS * 3600);
+  return { token: token, name: name, role: 'manager' };
+}
+
+// ---------- Admin + task manager API ----------
 function adminData(token) {
-  requireSession_(token, 'admin');
+  const sess = requireSession_(token, STAFF);
   const s = getSettings_();
   const todayKey = dayKey_(new Date());
   const since = Date.now() - 86400000;
   const tasks = readTasksForWeb_();
-  const team = getTeamAll_().map(m => ({
+  const props = PropertiesService.getScriptProperties();
+  let team = getTeamAll_().map(m => ({
     name: m.name, email: m.email, role: m.role, active: m.active,
-    hasPin: !!PropertiesService.getScriptProperties().getProperty('PIN_' + m.email.toLowerCase())
+    hasPin: !!props.getProperty('PIN_' + m.email.toLowerCase())
   }));
   const open = t => t.approval === 'Approved' && t.status !== 'Done';
   const stats = {
@@ -132,15 +157,19 @@ function adminData(token) {
       pending: mine.filter(t => t.approval === 'Pending').length
     };
   });
+  // Task managers see employee names only: no emails, PINs or admins
+  if (sess.role === 'manager') {
+    team = team.filter(m => m.role === 'Employee').map(m => ({ name: m.name, role: m.role, active: m.active }));
+  }
   return {
+    role: sess.role, me: sess.name,
     brand: String(s['Company name'] || ''), today: todayKey,
-    tasks: tasks, team: team, stats: stats, perEmployee: perEmployee,
-    sheetUrl: SpreadsheetApp.getActive().getUrl()
+    tasks: tasks, team: team, stats: stats, perEmployee: perEmployee
   };
 }
 
 function adminAddTask(token, t) {
-  requireSession_(token, 'admin');
+  const sess = requireSession_(token, STAFF);
   t = t || {};
   const task = String(t.task || '').trim();
   if (!task) throw new Error('Task title is required.');
@@ -149,35 +178,54 @@ function adminAddTask(token, t) {
     throw new Error('Pick an active employee.');
   }
   const priority = PRIORITIES.includes(t.priority) ? t.priority : 'Medium';
-  const approval = (t.approveNow || t.sendNow) ? 'Approved' : 'Pending';
+  const isAdmin = sess.role === 'admin';
+  // Task managers can only submit for approval
+  const approval = isAdmin && (t.approveNow || t.sendNow) ? 'Approved' : 'Pending';
   const due = parseDay_(t.due);
+  const createdBy = isAdmin ? 'Admin' : sess.name;
 
-  const sh = SpreadsheetApp.getActive().getSheetByName(TASKS_TAB);
+  const sh = tasksSheet_();
   const row = firstEmptyTaskRow_(sh);
   sh.getRange(row, C.TASK, 1, 6).setValues([[task, String(t.details || '').trim(), assignee, priority, due || '', approval]]);
+  sh.getRange(row, CREATED_BY_COL).setValue(createdBy);
   syncNow();
+  const vals = sh.getRange(row, 1, 1, ADMIN_COLS).getValues()[0];
   let emailed = 0;
-  if (t.sendNow) {
-    const vals = sh.getRange(row, 1, 1, ADMIN_COLS).getValues()[0];
-    if (vals[C.ID - 1]) emailed = sendNewTaskEmails_([vals], getSettings_());
-  }
+  if (isAdmin && t.sendNow && vals[C.ID - 1]) emailed = sendNewTaskEmails_([vals], getSettings_());
+  if (!isAdmin && vals[C.ID - 1]) notifyAdminsNewTask_(vals, createdBy);
   const data = adminData(token);
   data.emailed = emailed;
   return data;
 }
 
+/**
+ * Edit a task. Admin: any field including approval; with t.sendNow, a task that becomes
+ * Approved is emailed to the employee straight away. Task manager: any field except
+ * approval, which they can only set to Cancelled.
+ */
 function adminUpdateTask(token, id, t) {
-  requireSession_(token, 'admin');
-  const sh = SpreadsheetApp.getActive().getSheetByName(TASKS_TAB);
+  const sess = requireSession_(token, STAFF);
+  t = t || {};
+  if (sess.role === 'manager' && t.approval !== undefined && t.approval !== 'Cancelled') {
+    throw new Error('Only the admin can approve or reject tasks.');
+  }
+  const res = applyTaskUpdate_(id, t);
+  const data = adminData(token);
+  data.emailed = res.emailed;
+  return data;
+}
+
+function applyTaskUpdate_(id, t) {
+  const sh = tasksSheet_();
   const row = findTaskRow_(sh, id);
   if (!row) throw new Error('Task ' + id + ' not found.');
   const cur = sh.getRange(row, C.TASK, 1, 6).getValues()[0];
-  t = t || {};
   if (t.assignee !== undefined && !getTeamAll_().some(m => m.name === t.assignee && m.role === 'Employee')) {
     throw new Error('Unknown employee.');
   }
   if (t.approval !== undefined && !APPROVALS.includes(t.approval)) throw new Error('Unknown approval value.');
   if (t.priority !== undefined && !PRIORITIES.includes(t.priority)) throw new Error('Unknown priority.');
+  const wasApproved = cur[5] === 'Approved';
   const next = [
     t.task !== undefined ? String(t.task).trim() || cur[0] : cur[0],
     t.details !== undefined ? String(t.details).trim() : cur[1],
@@ -188,7 +236,89 @@ function adminUpdateTask(token, id, t) {
   ];
   sh.getRange(row, C.TASK, 1, 6).setValues([next]);
   syncNow();
-  return adminData(token);
+  let emailed = 0;
+  if (t.sendNow && next[5] === 'Approved' && !wasApproved) {
+    emailed = sendNewTaskEmails_([sh.getRange(row, 1, 1, ADMIN_COLS).getValues()[0]], getSettings_());
+  }
+  return { emailed: emailed };
+}
+
+// ---------- Approve / reject from email ----------
+/** Email to admins when a task manager submits a task, with signed decision links. */
+function notifyAdminsNewTask_(vals, createdBy) {
+  const s = getSettings_();
+  const admins = listEmails_(s['Admin emails'])
+    .concat(getTeam_().filter(m => m.role === 'Admin' && m.email).map(m => m.email));
+  const to = [...new Set(admins.map(e => e.toLowerCase()))].join(',');
+  if (!to) return;
+  const base = String(s['Dashboard URL'] || '').trim().replace(/\/+$/, '');
+  const id = String(vals[C.ID - 1]);
+  const tok = makeDecisionToken_(id);
+  const link = a => base + '/approve?t=' + encodeURIComponent(tok) + '&a=' + a;
+  const btn = (label, a, bg) => '<a href="' + link(a) + '" style="background:' + bg +
+    ';color:#fff;padding:9px 14px;border-radius:6px;text-decoration:none;display:inline-block;margin:0 6px 6px 0">' + label + '</a>';
+  const brand = s['Company name'] ? s['Company name'] + ' ' : '';
+  let html = '<p><b>' + esc_(createdBy) + '</b> added a task that needs your approval.</p>' +
+    '<div style="border:1px solid #e3e7ef;border-left:4px solid #a86a00;border-radius:8px;padding:12px 14px;margin:10px 0">' +
+    '<div style="font-size:15px;font-weight:bold">' + esc_(vals[C.TASK - 1]) + '</div>' +
+    (vals[C.DETAILS - 1] ? '<div style="color:#444;margin-top:6px;white-space:pre-wrap">' + esc_(vals[C.DETAILS - 1]) + '</div>' : '') +
+    '<div style="color:#6b7487;font-size:13px;margin-top:8px">' + esc_(id) + ' &nbsp;|&nbsp; For: <b>' + esc_(vals[C.ASSIGNEE - 1]) + '</b>' +
+    ' &nbsp;|&nbsp; Priority: <b>' + esc_(vals[C.PRIORITY - 1]) + '</b> &nbsp;|&nbsp; Due: <b>' + (fmtDate_(vals[C.DUE - 1]) || 'No due date') + '</b></div></div>';
+  if (base) {
+    html += '<p>' + btn('Approve &amp; send now', 'approve_now', '#1e8e4e') + btn('Approve (evening summary)', 'approve', '#2c5fb3') +
+      btn('Reject', 'reject', '#c0392b') + '</p>' +
+      '<p style="color:#6b7487;font-size:12px">Each button opens a confirm page. Links work for ' + DECISION_DAYS + ' days. ' +
+      'Or use the <a href="' + base + '/admin">admin dashboard</a>.</p>';
+  } else {
+    html += '<p>Open the admin dashboard to approve it. (Add "Dashboard URL" in Settings to get approve buttons here.)</p>';
+  }
+  try {
+    MailApp.sendEmail({ to: to, subject: brand + 'Approve task ' + id + ': ' + String(vals[C.TASK - 1]).slice(0, 70) + ' (by ' + createdBy + ')',
+      htmlBody: wrap_(html) });
+  } catch (e) { Logger.log('Admin notification failed: ' + e); }
+}
+
+function makeDecisionToken_(id) {
+  const exp = Date.now() + DECISION_DAYS * 86400000;
+  const payload = id + '.' + exp;
+  return payload + '.' + sign_(payload);
+}
+
+function readDecisionToken_(tok) {
+  const parts = String(tok || '').split('.');
+  if (parts.length !== 3) throw new Error('This link is not valid.');
+  const payload = parts[0] + '.' + parts[1];
+  if (sign_(payload) !== parts[2]) throw new Error('This link is not valid.');
+  if (Number(parts[1]) < Date.now()) throw new Error('This link has expired. Use the admin dashboard instead.');
+  return parts[0];
+}
+
+function sign_(text) {
+  const key = PropertiesService.getScriptProperties().getProperty('API_SECRET');
+  if (!key) throw new Error('Vercel connection is not set up.');
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(text, key)).replace(/=+$/, '');
+}
+
+/** Shown on the confirm page opened from the email. */
+function decisionInfo(tok) {
+  const id = readDecisionToken_(tok);
+  const t = readTasksForWeb_().find(x => x.id === id);
+  if (!t) throw new Error('This task no longer exists.');
+  return { id: t.id, task: t.task, details: t.details, assignee: t.assignee, priority: t.priority,
+           dueLabel: t.dueLabel, createdBy: t.createdBy, approval: t.approval };
+}
+
+function decide(tok, action) {
+  const id = readDecisionToken_(tok);
+  const map = { approve_now: 'Approved', approve: 'Approved', hold: 'On Hold', reject: 'Rejected' };
+  if (!map[action]) throw new Error('Unknown action.');
+  const t = readTasksForWeb_().find(x => x.id === id);
+  if (!t) throw new Error('This task no longer exists.');
+  if (t.approval !== 'Pending' && t.approval !== 'On Hold') {
+    return { id: id, approval: t.approval, already: true, emailed: 0 };
+  }
+  const res = applyTaskUpdate_(id, { approval: map[action], sendNow: action === 'approve_now' });
+  return { id: id, approval: map[action], already: false, emailed: res.emailed };
 }
 
 function adminAddEmployee(token, e) {
@@ -275,7 +405,7 @@ function adminResetPin(token, name) {
 }
 
 function adminSyncNow(token) {
-  requireSession_(token, 'admin');
+  requireSession_(token, STAFF);
   syncNow();
   return adminData(token);
 }
@@ -370,7 +500,8 @@ function readTasksForWeb_() {
   if (last < 2) return [];
   const todayKey = dayKey_(new Date());
   const dt = d => d instanceof Date ? Utilities.formatDate(d, TZ, 'dd MMM yyyy, hh:mm a') : '';
-  return sh.getRange(2, 1, last - 1, ADMIN_COLS).getValues()
+  const cols = Math.min(sh.getMaxColumns(), CREATED_BY_COL);
+  return sh.getRange(2, 1, last - 1, cols).getValues()
     .filter(r => r[C.ID - 1] && String(r[C.TASK - 1]).trim())
     .map(r => {
       const due = r[C.DUE - 1];
@@ -394,9 +525,18 @@ function readTasksForWeb_() {
         updated: dt(r[C.UPDATED - 1]),
         completed: dt(completed),
         completedMs: completed instanceof Date ? completed.getTime() : 0,
-        overdue: approval === 'Approved' && status !== 'Done' && due instanceof Date && dayKey_(due) < todayKey
+        overdue: approval === 'Approved' && status !== 'Done' && due instanceof Date && dayKey_(due) < todayKey,
+        createdBy: String(r[CREATED_BY_COL - 1] || '')
       };
     });
+}
+
+/** Tasks tab, with the "Created By" column added if it is missing. */
+function tasksSheet_() {
+  const sh = SpreadsheetApp.getActive().getSheetByName(TASKS_TAB);
+  if (sh.getMaxColumns() < CREATED_BY_COL) sh.insertColumnsAfter(sh.getMaxColumns(), CREATED_BY_COL - sh.getMaxColumns());
+  if (!sh.getRange(1, CREATED_BY_COL).getValue()) sh.getRange(1, CREATED_BY_COL).setValue('Created By');
+  return sh;
 }
 
 function firstEmptyTaskRow_(sh) {

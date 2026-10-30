@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Approve task</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231f3864'/><path d='M9 16.5l4.5 4.5L23 11.5' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .decide{max-width:520px}
+  .decide .t-title{font-size:17px}
+  .decide .meta{display:flex;flex-wrap:wrap;gap:8px 16px;color:var(--muted);font-size:13px;margin:12px 0 18px}
+  .decide .choices{display:flex;flex-direction:column;gap:8px}
+  .decide .choices .btn{padding:11px 16px;text-align:left}
+  .decide .choices .btn.picked{outline:3px solid rgba(44,79,138,.35);outline-offset:2px}
+  .result{font-size:16px;font-weight:600;margin:6px 0 4px}
+</style>
+</head>
+<body>
+<div id="busy" class="busy hidden"></div>
+<div class="login-wrap">
+  <div class="login decide" id="box">
+    <span class="badge-role">Task approval</span>
+    <div id="content"><p class="muted">Loading the task...</p></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const q = new URLSearchParams(location.search);
+  const tok = q.get('t') || '';
+  const picked = q.get('a') || '';
+  // Keep the signed token out of the address bar and browser history once read
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+
+  async function call(fn, ...args){
+    $('busy').classList.remove('hidden');
+    try {
+      const r = await fetch('/api/rpc', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ fn, args }) });
+      const j = await r.json().catch(() => ({ ok:false, error:'Server error (' + r.status + ').' }));
+      if (!j.ok) throw new Error(j.error || 'Something went wrong.');
+      return j.result;
+    } finally { $('busy').classList.add('hidden'); }
+  }
+  const LABEL = { approve_now: 'Approve & send now', approve: 'Approve (evening summary)', hold: 'Put on hold', reject: 'Reject' };
+  const done = (title, sub) => { $('content').innerHTML = `<div class="result">${esc(title)}</div><p class="muted">${esc(sub || '')}</p>
+      <p><a class="btn ghost" href="/admin" style="display:inline-block;text-decoration:none">Open admin dashboard</a></p>`; };
+
+  async function load(){
+    if (!tok) { done('This link is incomplete.', 'Open the task from the admin dashboard instead.'); return; }
+    let t;
+    try { t = await call('decisionInfo', tok); }
+    catch (err) { done(err.message, 'You can still approve it from the admin dashboard.'); return; }
+    if (t.approval !== 'Pending' && t.approval !== 'On Hold') { done(t.id + ' is already ' + t.approval + '.', 'Nothing more to do.'); return; }
+    $('content').innerHTML = `
+      <div class="t-title">${esc(t.task)}</div>
+      ${t.details ? `<div class="t-sub" style="margin-top:6px;white-space:pre-wrap;max-width:none">${esc(t.details)}</div>` : ''}
+      <div class="meta"><span>${esc(t.id)}</span><span>For <b>${esc(t.assignee)}</b></span>
+        <span>Priority <b>${esc(t.priority || '-')}</b></span><span>Due <b>${esc(t.dueLabel || 'none')}</b></span>
+        ${t.createdBy ? `<span>Added by <b>${esc(t.createdBy)}</b></span>` : ''}</div>
+      <div class="choices">
+        <button class="btn ok ${picked==='approve_now'?'picked':''}" data-a="approve_now">Approve &amp; send now <span style="font-weight:400;opacity:.85">· employee is emailed straight away</span></button>
+        <button class="btn ${picked==='approve'?'picked':''}" data-a="approve">Approve <span style="font-weight:400;opacity:.85">· in tonight's summary email</span></button>
+        <button class="btn ghost ${picked==='hold'?'picked':''}" data-a="hold">Put on hold</button>
+        <button class="btn bad ${picked==='reject'?'picked':''}" data-a="reject">Reject</button>
+      </div>
+      <div class="err" id="err"></div>`;
+    document.querySelectorAll('[data-a]').forEach(b => b.onclick = async () => {
+      document.querySelectorAll('[data-a]').forEach(x => x.disabled = true);
+      $('err').textContent = '';
+      try {
+        const r = await call('decide', tok, b.dataset.a);
+        if (r.already) done(r.id + ' was already ' + r.approval + '.', 'Someone decided on it before you.');
+        else done(r.id + ': ' + LABEL[b.dataset.a] + ' done.',
+          b.dataset.a === 'approve_now' ? (r.emailed ? 'The employee has been emailed.' : 'Approved, but the email could not be sent. Check their email in Team.')
+          : b.dataset.a === 'approve' ? 'The employee will see it in tonight\'s summary.' : '');
+      } catch (err) {
+        $('err').textContent = err.message;
+        document.querySelectorAll('[data-a]').forEach(x => x.disabled = false);
+      }
+    });
+  }
+  load();
+})();
+</script>
+</body>
+</html>

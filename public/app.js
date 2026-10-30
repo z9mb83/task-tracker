@@ -1,9 +1,11 @@
 /* Task Tracker dashboard (Vercel). Talks to Apps Script through /api/rpc. */
-const PAGE = window.PAGE === 'admin' ? 'admin' : 'employee';
+const PAGE = ['admin','manager'].includes(window.PAGE) ? window.PAGE : 'employee';
+const STAFF = PAGE !== 'employee';     // admin or task manager
+const IS_ADMIN = PAGE === 'admin';
 let BRAND = '';
 const STATUSES = ['Not Started','In Progress','Blocked','Done'];
 const PRIORITIES = ['High','Medium','Low'];
-const APPROVALS = ['Pending','Approved','Rejected','On Hold'];
+const APPROVALS = ['Pending','Approved','Rejected','On Hold','Cancelled'];
 
 let token = null, data = null, currentTab = 'overview';
 const filters = { q:'', emp:'', approval:'', status:'' };
@@ -54,24 +56,40 @@ function modal(html){ $('modalRoot').innerHTML = `<div class="overlay" id="ov"><
 function closeModal(){ $('modalRoot').innerHTML = ''; }
 
 // ---------- login ----------
+const PAGE_TITLE = { admin: 'Admin dashboard', manager: 'Task manager', employee: 'My tasks' };
 function loginText(){
-  const admin = PAGE === 'admin';
-  $('loginTitle').textContent = (BRAND ? BRAND + ' ' : '') + (admin ? 'Admin dashboard' : 'My tasks');
-  document.title = (BRAND ? BRAND + ' ' : '') + (admin ? 'Admin Dashboard' : 'My Tasks');
+  $('loginTitle').textContent = (BRAND ? BRAND + ' ' : '') + PAGE_TITLE[PAGE];
+  document.title = (BRAND ? BRAND + ' ' : '') + PAGE_TITLE[PAGE];
 }
 function setupLogin(){
-  const admin = PAGE === 'admin';
   loginText();
-  $('loginRole').textContent = admin ? 'Admin' : 'Employee';
-  $('loginSub').textContent = admin ? 'Enter the admin password to manage tasks and your team.' : 'Sign in with your work email and the PIN your admin gave you.';
-  $('emailField').classList.toggle('hidden', admin);
-  $('secretLabel').textContent = admin ? 'Admin password' : 'PIN';
-  if (!admin) $('loginSecret').setAttribute('inputmode','numeric');
+  $('loginRole').textContent = { admin: 'Admin', manager: 'Task manager', employee: 'Employee' }[PAGE];
+  $('loginSub').textContent = {
+    admin: 'Enter the admin password to manage tasks and your team.',
+    manager: 'Enter your name and the task manager PIN. Tasks you add go to the admin for approval.',
+    employee: 'Sign in with your work email and the PIN your admin gave you.'
+  }[PAGE];
+  $('emailField').classList.toggle('hidden', PAGE === 'admin');
+  if (PAGE === 'manager') {
+    $('emailField').querySelector('label').textContent = 'Your name';
+    const n = $('loginEmail'); n.type = 'text'; n.autocomplete = 'name'; n.maxLength = 40;
+    try { n.value = localStorage.getItem('tt_manager_name') || ''; } catch (e) {}
+  }
+  $('secretLabel').textContent = { admin: 'Admin password', manager: 'Task manager PIN', employee: 'PIN' }[PAGE];
+  if (PAGE !== 'admin') $('loginSecret').setAttribute('inputmode','numeric');
   $('loginForm').addEventListener('submit', async e => {
     e.preventDefault();
     $('loginErr').textContent = ''; $('loginBtn').disabled = true;
     try {
-      const r = await call('login', PAGE === 'admin' ? 'admin' : 'employee', $('loginEmail').value, $('loginSecret').value);
+      let r;
+      if (PAGE === 'manager') {
+        const name = $('loginEmail').value.trim();
+        if (!name) throw new Error('Enter your name.');
+        r = await call('tmLogin', name, $('loginSecret').value);
+        try { localStorage.setItem('tt_manager_name', name); } catch (e) {}
+      } else {
+        r = await call('login', PAGE, $('loginEmail').value, $('loginSecret').value);
+      }
       token = r.token; store.set(token); $('loginSecret').value = '';
       await startApp();
     } catch (err) { $('loginErr').textContent = err.message; }
@@ -87,21 +105,23 @@ async function signOut(silent){
 }
 async function startApp(){
   $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden');
-  $('adminTabs').classList.toggle('hidden', PAGE !== 'admin');
-  $('fab').classList.toggle('hidden', PAGE !== 'admin');
+  $('adminTabs').classList.toggle('hidden', !STAFF);
+  $('fab').classList.toggle('hidden', !STAFF);
+  document.querySelectorAll('.tab[data-tab="approvals"], .tab[data-tab="team"]').forEach(b => b.classList.toggle('hidden', !IS_ADMIN));
   await reload();
 }
 async function reload(){
   try {
-    data = await call(PAGE === 'admin' ? 'adminData' : 'empData', token);
+    data = await call(STAFF ? 'adminData' : 'empData', token);
     render();
   } catch (err) { toast(err.message, true); }
 }
 
 // ---------- render ----------
 function render(){
-  if (PAGE === 'admin') {
-    $('appTitle').textContent = (data.brand ? data.brand + ' ' : '') + 'Admin dashboard';
+  if (STAFF) {
+    if (!IS_ADMIN && (currentTab === 'approvals' || currentTab === 'team')) currentTab = 'overview';
+    $('appTitle').textContent = (data.brand ? data.brand + ' ' : '') + (IS_ADMIN ? 'Admin dashboard' : 'Task manager · ' + (data.me || ''));
     $('appSub').textContent = data.stats.pending + ' waiting for approval · ' + data.stats.overdue + ' overdue';
     const pc = $('pendingCount'); pc.textContent = data.stats.pending; pc.classList.toggle('hidden', !data.stats.pending);
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === currentTab));
@@ -142,7 +162,7 @@ function taskTable(list, emptyMsg){
     <tr><th>ID</th><th>Task</th><th>Employee</th><th>Due</th><th>Priority</th><th>Approval</th><th>Status</th><th class="hide-sm">Remarks</th></tr>
     ${list.map(t => `<tr class="click" data-id="${esc(t.id)}">
       <td class="muted">${esc(t.id)}</td>
-      <td><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub">${esc(t.details)}</div>` : ''}</td>
+      <td><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub">${esc(t.details)}</div>` : ''}${addedBy(t)}</td>
       <td>${esc(t.assignee)}</td>
       <td class="${t.overdue ? 'overdue' : ''}">${esc(t.dueLabel || '-')}</td>
       <td>${prioPill(t.priority)}</td>
@@ -152,6 +172,7 @@ function taskTable(list, emptyMsg){
     </tr>`).join('')}
   </table></div>`;
 }
+function addedBy(t){ return t.createdBy ? `<div class="t-sub" style="font-size:11.5px">Added by <b>${esc(t.createdBy)}</b></div>` : ''; }
 function bindTaskRows(){ document.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => openTask(tr.dataset.id)); }
 
 function renderTasks(){
@@ -161,11 +182,11 @@ function renderTasks(){
     (!filters.emp || t.assignee === filters.emp) &&
     (!filters.approval || t.approval === filters.approval) &&
     (!filters.status || (filters.status === 'Overdue' ? t.overdue : t.status === filters.status)) &&
-    (!q || (t.task + ' ' + t.details + ' ' + t.id + ' ' + t.remarks).toLowerCase().includes(q))
+    (!q || (t.task + ' ' + t.details + ' ' + t.id + ' ' + t.remarks + ' ' + t.createdBy).toLowerCase().includes(q))
   ).reverse();
   $('main').innerHTML = `<div class="card">
     <div class="row" style="margin-bottom:12px">
-      <div class="field"><label>Search</label><input type="text" id="fq" value="${esc(filters.q)}" placeholder="Task, ID or remark"></div>
+      <div class="field"><label>Search</label><input type="text" id="fq" value="${esc(filters.q)}" placeholder="Task, ID, remark or who added it"></div>
       <div class="field"><label>Employee</label><select id="femp">${options(emps, filters.emp, 'All employees')}</select></div>
       <div class="field"><label>Approval</label><select id="fapp">${options(APPROVALS, filters.approval, 'Any')}</select></div>
       <div class="field"><label>Status</label><select id="fst">${options(STATUSES.concat(['Overdue']), filters.status, 'Any')}</select></div>
@@ -188,17 +209,23 @@ function renderApprovals(){
       <tr><th>ID</th><th>Task</th><th>Employee</th><th>Due</th><th>Priority</th><th>Approval</th><th></th></tr>
       ${list.map(t => `<tr>
         <td class="muted">${esc(t.id)}</td>
-        <td><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub">${esc(t.details)}</div>` : ''}</td>
+        <td><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub">${esc(t.details)}</div>` : ''}${addedBy(t)}</td>
         <td>${esc(t.assignee)}</td><td>${esc(t.dueLabel || '-')}</td><td>${prioPill(t.priority)}</td><td>${approvalPill(t.approval)}</td>
         <td style="white-space:nowrap">
-          <button class="btn ok small" data-act="Approved" data-id="${esc(t.id)}">Approve</button>
+          <button class="btn ok small" data-act="Approved" data-send="1" data-id="${esc(t.id)}" title="Approve and email the employee now">Approve &amp; send now</button>
+          <button class="btn ghost small" data-act="Approved" data-id="${esc(t.id)}" title="Approve; the employee sees it in tonight's summary">Approve</button>
           <button class="btn ghost small" data-act="On Hold" data-id="${esc(t.id)}">Hold</button>
           <button class="btn bad small" data-act="Rejected" data-id="${esc(t.id)}">Reject</button>
         </td></tr>`).join('')}
     </table></div>`}</div>`;
   document.querySelectorAll('button[data-act]').forEach(b => b.onclick = async () => {
     b.disabled = true;
-    try { data = await call('adminUpdateTask', token, b.dataset.id, { approval: b.dataset.act }); toast(b.dataset.id + ': ' + b.dataset.act); render(); }
+    const sendNow = b.dataset.send === '1';
+    try {
+      data = await call('adminUpdateTask', token, b.dataset.id, { approval: b.dataset.act, sendNow });
+      toast(b.dataset.id + ': ' + b.dataset.act + (sendNow ? (data.emailed ? ', emailed to employee' : ', but the email could not be sent') : b.dataset.act === 'Approved' ? ', in tonight\'s summary' : ''));
+      render();
+    }
     catch (err) { toast(err.message, true); b.disabled = false; }
   });
 }
@@ -208,7 +235,7 @@ function activeEmployees(){ return data.team.filter(m => m.role === 'Employee' &
 function renderNewTask(){
   const emps = activeEmployees();
   $('main').innerHTML = `<div class="card" style="max-width:720px"><h3>Assign a new task</h3>
-    ${!emps.length ? '<div class="empty">Add an employee in the Team tab first.</div>' : `
+    ${!emps.length ? `<div class="empty">${IS_ADMIN ? 'Add an employee in the Team tab first.' : 'No active employees yet. Ask the admin to add them.'}</div>` : `
     <form id="ntForm">
       <div class="field"><label>Task</label><input type="text" id="ntTask" maxlength="200" required placeholder="What needs to be done"></div>
       <div class="field"><label>Details</label><textarea id="ntDetails" placeholder="Instructions, links, expected result"></textarea></div>
@@ -217,12 +244,7 @@ function renderNewTask(){
         <div class="field"><label>Priority</label><select id="ntPrio">${options(PRIORITIES, 'Medium')}</select></div>
         <div class="field"><label>Due date</label><input type="date" id="ntDue" min="${esc(data.today)}"></div>
       </div>
-      <div class="field"><label class="switch"><input type="checkbox" id="ntApprove" checked> Approve now (sends it to the employee straight away)</label></div>
-      <div class="row" style="gap:8px">
-        <button class="btn ghost" type="submit" data-mode="summary">Add to daily summary</button>
-        <button class="btn" type="submit" data-mode="now">Send now</button>
-      </div>
-      <div class="muted" style="font-size:12px;margin-top:8px">Send now approves the task and emails the employee straight away. Otherwise it appears in tonight's summary email for tomorrow.</div>
+      ${addButtons('nt', false)}
     </form>`}</div>`;
   const f = $('ntForm'); if (!f) return;
   f.onsubmit = async e => {
@@ -233,7 +255,7 @@ function renderNewTask(){
     const who = $('ntEmp').value;
     try {
       data = await call('adminAddTask', token, { task:$('ntTask').value, details:$('ntDetails').value, assignee:who,
-        priority:$('ntPrio').value, due:$('ntDue').value, approveNow:$('ntApprove').checked, sendNow });
+        priority:$('ntPrio').value, due:$('ntDue').value, approveNow:IS_ADMIN, sendNow });
       toast(addedMsg(who, sendNow));
       renderNewTask(); $('pendingCount').textContent = data.stats.pending;
     } catch (err) { toast(err.message, true); btns.forEach(b => b.disabled = false); }
@@ -331,21 +353,35 @@ function openTask(id){
     </div>
     <div class="row">
       <div class="field"><label>Due date</label><input type="date" id="etDue" value="${esc(t.due)}"></div>
-      <div class="field"><label>Approval</label><select id="etApp">${options(APPROVALS, t.approval)}</select></div>
+      <div class="field"><label>Approval</label>${IS_ADMIN
+        ? `<select id="etApp">${options(APPROVALS, t.approval)}</select>`
+        : `<div style="padding:8px 0">${approvalPill(t.approval)}</div>`}</div>
     </div>
+    ${IS_ADMIN && t.approval !== 'Approved' ? '<div class="field"><label class="switch"><input type="checkbox" id="etSend"> If approving, email the employee now</label></div>' : ''}
     <div class="card" style="background:var(--bg);box-shadow:none;padding:12px">
       <div><b>Employee status:</b> ${statusPill(t.status)} ${t.approval==='Approved' ? Math.round(t.progress*100)+'%' : ''}</div>
       ${t.remarks ? `<div style="margin-top:6px"><b>Remarks:</b> ${esc(t.remarks)}</div>` : ''}
-      <div class="muted" style="margin-top:6px;font-size:12px">Created ${esc(t.created||'-')}${t.approvedOn ? ' · Approved '+esc(t.approvedOn) : ''}${t.updated ? ' · Updated '+esc(t.updated) : ''}${t.completed ? ' · Completed '+esc(t.completed) : ''}</div>
+      <div class="muted" style="margin-top:6px;font-size:12px">${t.createdBy ? 'Added by ' + esc(t.createdBy) + ' · ' : ''}Created ${esc(t.created||'-')}${t.approvedOn ? ' · Approved '+esc(t.approvedOn) : ''}${t.updated ? ' · Updated '+esc(t.updated) : ''}${t.completed ? ' · Completed '+esc(t.completed) : ''}</div>
     </div>
-    <div class="actions"><button class="btn ghost" id="etCancel">Cancel</button><button class="btn" id="etSave">Save changes</button></div>`);
-  $('etCancel').onclick = closeModal;
+    <div class="actions">
+      ${!IS_ADMIN && t.approval !== 'Cancelled' ? '<button class="btn bad" id="etCancelTask" style="margin-right:auto">Cancel task</button>' : ''}
+      <button class="btn ghost" id="etClose">Close</button><button class="btn" id="etSave">Save changes</button></div>`);
+  $('etClose').onclick = closeModal;
+  if ($('etCancelTask')) $('etCancelTask').onclick = async () => {
+    const b = $('etCancelTask');
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'Click again to cancel ' + id; return; }
+    b.disabled = true;
+    try { data = await call('adminUpdateTask', token, id, { approval: 'Cancelled' }); closeModal(); render(); toast(id + ' cancelled'); }
+    catch (err) { toast(err.message, true); b.disabled = false; }
+  };
   $('etSave').onclick = async () => {
     $('etSave').disabled = true;
     try {
-      data = await call('adminUpdateTask', token, id, { task:$('etTask').value, details:$('etDetails').value, assignee:$('etEmp').value,
-        priority:$('etPrio').value, due:$('etDue').value, approval:$('etApp').value });
-      closeModal(); render(); toast(id + ' saved');
+      const upd = { task:$('etTask').value, details:$('etDetails').value, assignee:$('etEmp').value,
+        priority:$('etPrio').value, due:$('etDue').value };
+      if (IS_ADMIN) { upd.approval = $('etApp').value; upd.sendNow = !!($('etSend') && $('etSend').checked); }
+      data = await call('adminUpdateTask', token, id, upd);
+      closeModal(); render(); toast(id + ' saved' + (upd.sendNow && data.emailed ? ', emailed to employee' : ''));
     } catch (err) { toast(err.message, true); $('etSave').disabled = false; }
   };
 }
@@ -396,7 +432,20 @@ function renderEmployee(){
   });
 }
 
+/** Submit buttons for the add-task forms: admin chooses how to send, task manager submits for approval. */
+function addButtons(prefix, withCancel){
+  const cancel = withCancel ? `<button class="btn ghost" type="button" id="${prefix}Cancel">Cancel</button>` : '';
+  if (!IS_ADMIN) return `<div class="actions" style="justify-content:${withCancel ? 'flex-end' : 'flex-start'}">${cancel}
+      <button class="btn" type="submit" data-mode="submit">Submit for approval</button></div>
+    <div class="muted" style="font-size:12px;margin-top:8px">The admin gets an email to approve it. You'll see the status under All tasks.</div>`;
+  return `<div class="actions" style="justify-content:${withCancel ? 'flex-end' : 'flex-start'}">${cancel}
+      <button class="btn ghost" type="submit" data-mode="summary">Approve, add to daily summary</button>
+      <button class="btn" type="submit" data-mode="now">Approve &amp; send now</button></div>
+    <div class="muted" style="font-size:12px;margin-top:8px">Send now emails the employee straight away. Otherwise it appears in tonight's summary email for tomorrow.</div>`;
+}
+
 function addedMsg(who, sendNow){
+  if (!IS_ADMIN) return 'Task sent to the admin for approval.';
   if (sendNow) return data && data.emailed ? 'Task sent to ' + who + ' by email' : 'Task created for ' + who + ', but the email could not be sent (check their email in Team)';
   return 'Task added. ' + who + ' will see it in tonight\'s summary.';
 }
@@ -404,8 +453,12 @@ function addedMsg(who, sendNow){
 // ---------- quick "+" task modal ----------
 function openNewTaskModal(preEmp){
   const emps = activeEmployees();
-  if (!emps.length) { toast('Add an employee in the Team tab first.', true); currentTab = 'team'; render(); return; }
-  modal(`<h3>Assign a new task</h3>
+  if (!emps.length) {
+    if (IS_ADMIN) { toast('Add an employee in the Team tab first.', true); currentTab = 'team'; render(); }
+    else toast('No active employees yet. Ask the admin to add them.', true);
+    return;
+  }
+  modal(`<h3>${IS_ADMIN ? 'Assign a new task' : 'Add a task for approval'}</h3>
     <form id="qtForm">
       <div class="field"><label>Task</label><input type="text" id="qtTask" maxlength="200" required placeholder="What needs to be done"></div>
       <div class="field"><label>Details</label><textarea id="qtDetails" placeholder="Instructions, links, expected result"></textarea></div>
@@ -416,11 +469,7 @@ function openNewTaskModal(preEmp){
       <div class="row">
         <div class="field"><label>Due date</label><input type="date" id="qtDue" min="${esc(data.today)}"></div>
       </div>
-      <div class="field"><label class="switch"><input type="checkbox" id="qtApprove" checked> Approve now (sends it to the employee straight away)</label></div>
-      <div class="actions"><button class="btn ghost" type="button" id="qtCancel">Cancel</button>
-        <button class="btn ghost" type="submit" data-mode="summary">Add to daily summary</button>
-        <button class="btn" type="submit" data-mode="now">Send now</button></div>
-      <div class="muted" style="font-size:12px;margin-top:8px">Send now approves the task and emails the employee straight away. Otherwise it appears in tonight's summary email for tomorrow.</div>
+      ${addButtons('qt', true)}
     </form>`);
   $('qtTask').focus();
   $('qtCancel').onclick = closeModal;
@@ -432,7 +481,7 @@ function openNewTaskModal(preEmp){
     const who = $('qtEmp').value;
     try {
       data = await call('adminAddTask', token, { task:$('qtTask').value, details:$('qtDetails').value, assignee:who,
-        priority:$('qtPrio').value, due:$('qtDue').value, approveNow:$('qtApprove').checked, sendNow });
+        priority:$('qtPrio').value, due:$('qtDue').value, approveNow:IS_ADMIN, sendNow });
       closeModal(); render(); toast(addedMsg(who, sendNow));
     } catch (err) { toast(err.message, true); btns.forEach(b => b.disabled = false); }
   };
@@ -444,7 +493,7 @@ $('fab').onclick = () => openNewTaskModal(currentTab === 'tasks' ? filters.emp :
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; if (data) render(); });
 $('logoutBtn').onclick = () => signOut(false);
 $('refreshBtn').onclick = async () => {
-  if (PAGE === 'admin') { try { data = await call('adminSyncNow', token); render(); toast('Synced with the sheets'); } catch (err) { toast(err.message, true); } }
+  if (STAFF) { try { data = await call('adminSyncNow', token); render(); toast('Synced with the sheets'); } catch (err) { toast(err.message, true); } }
   else reload();
 };
 setupLogin();

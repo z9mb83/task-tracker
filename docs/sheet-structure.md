@@ -12,13 +12,14 @@
 | E | Assigned To | Admin (dropdown from Team!A) |
 | F | Priority | Admin (High / Medium / Low) |
 | G | Due Date | Admin |
-| H | Approval | Admin (Pending / Approved / Rejected / On Hold) |
+| H | Approval | Admin (Pending / Approved / Rejected / On Hold / Cancelled) |
 | I | Approved On | Script |
 | J | Status | Employee, via script (Not Started / In Progress / Blocked / Done) |
 | K | Progress % | Employee, via script |
 | L | Employee Remarks | Employee, via script |
 | M | Last Updated | Script |
 | N | Completed On | Script |
+| O | Created By | Dashboard (Admin, or the task manager's name) |
 
 ### Team
 | Col | Header | Values |
