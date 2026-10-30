@@ -247,9 +247,11 @@ function applyTaskUpdate_(id, t) {
 /** Email to admins when a task manager submits a task, with signed decision links. */
 function notifyAdminsNewTask_(vals, createdBy) {
   const s = getSettings_();
-  const admins = listEmails_(s['Admin emails'])
+  // Approval requests go to "Approval emails" in Settings; if that is empty, to the admins
+  let list = listEmails_(s['Approval emails']);
+  if (!list.length) list = listEmails_(s['Admin emails'])
     .concat(getTeam_().filter(m => m.role === 'Admin' && m.email).map(m => m.email));
-  const to = [...new Set(admins.map(e => e.toLowerCase()))].join(',');
+  const to = [...new Set(list.map(e => e.toLowerCase()))].join(',');
   if (!to) return;
   const base = String(s['Dashboard URL'] || '').trim().replace(/\/+$/, '');
   const id = String(vals[C.ID - 1]);
@@ -273,7 +275,7 @@ function notifyAdminsNewTask_(vals, createdBy) {
     html += '<p>Open the admin dashboard to approve it. (Add "Dashboard URL" in Settings to get approve buttons here.)</p>';
   }
   try {
-    MailApp.sendEmail({ to: to, subject: brand + 'Approve task ' + id + ': ' + String(vals[C.TASK - 1]).slice(0, 70) + ' (by ' + createdBy + ')',
+    sendMail_({ to: to, subject: brand + 'Approve task ' + id + ': ' + String(vals[C.TASK - 1]).slice(0, 70) + ' (by ' + createdBy + ')',
       htmlBody: wrap_(html) });
   } catch (e) { Logger.log('Admin notification failed: ' + e); }
 }
@@ -471,7 +473,7 @@ function sendPinEmail_(name, email, pin, isNew) {
       '</table>' +
       (link ? '<p><a href="' + link + '" style="background:#1f3864;color:#fff;padding:9px 16px;border-radius:6px;text-decoration:none;display:inline-block">Open my tasks</a></p>' : '') +
       '<p style="color:#6b7487;font-size:12px">Keep this PIN private. Ask your admin to reset it if you think someone else knows it.</p>';
-    MailApp.sendEmail({ to: email,
+    sendMail_({ to: email,
       subject: (brand ? brand + ' ' : '') + (isNew ? 'Your task dashboard login' : 'Your new task dashboard PIN'),
       htmlBody: wrap_(html) });
     return true;

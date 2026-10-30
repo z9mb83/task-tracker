@@ -236,7 +236,7 @@ function sendNewTaskEmails_(rows, s) {
       '<p style="color:#6b7487;font-size:12px">Update the status there as you work on it.</p>';
     const subject = brand + (list.length === 1 ? 'New task: ' + String(list[0][C.TASK - 1]).slice(0, 80) : list.length + ' new tasks assigned to you');
     try {
-      MailApp.sendEmail({ to: m.email, subject: subject, htmlBody: wrap_(html) });
+      sendMail_({ to: m.email, subject: subject, htmlBody: wrap_(html) });
       sent++;
     } catch (e) { Logger.log('New-task email to ' + m.email + ' failed: ' + e); }
   });
@@ -282,7 +282,7 @@ function sendDailyEmails() {
           doneToday.map(t => esc_(t.task)).join(', ') + '</p>';
       }
       html += '<p><a href="' + empUrl + '">Open my tasks</a> and update Status, Progress % and Remarks.</p>';
-      MailApp.sendEmail({ to: m.email, subject: brand + 'Your tasks for tomorrow, ' + tomorrowLabel, htmlBody: wrap_(html) });
+      sendMail_({ to: m.email, subject: brand + 'Your tasks for tomorrow, ' + tomorrowLabel, htmlBody: wrap_(html) });
     });
   }
 
@@ -328,7 +328,7 @@ function sendDailyEmails() {
     doneToday.map(t => [t.id, t.task, t.assignee, Utilities.formatDate(t.completed, TZ, 'dd MMM, hh:mm a')]));
   html += '<p><a href="' + adminUrl + '">Open the admin sheet</a></p>';
 
-  MailApp.sendEmail({ to: to, subject: brand + 'Daily task summary, ' + dateLabel, htmlBody: wrap_(html) });
+  sendMail_({ to: to, subject: brand + 'Daily task summary, ' + dateLabel, htmlBody: wrap_(html) });
 }
 
 // ---------- Employee tab helpers ----------
@@ -469,6 +469,14 @@ function getAdminTasks_() {
 }
 
 // ---------- Small utilities ----------
+/** All emails go through here so they show the sender name from Settings ("Task Tracker" by default). */
+function sendMail_(opts) {
+  let name = 'Task Tracker';
+  try { name = String(getSettings_()['Sender name'] || '').trim() || name; } catch (e) { /* settings missing */ }
+  opts.name = name;
+  MailApp.sendEmail(opts);
+}
+
 /** Employee dashboard link for emails (falls back to the Employees sheet if no Dashboard URL is set). */
 function employeeLink_(s) {
   const base = String(s['Dashboard URL'] || '').trim().replace(/\/+$/, '');

@@ -40,6 +40,9 @@
 | Keep done tasks visible (days) | Days a Done task stays on the employee tab |
 | Send employee emails | Yes / No |
 | Company name | Shown in email subjects and the dashboard |
+| Dashboard URL | Vercel link used in emails |
+| Approval emails | Where task-manager tasks needing approval are emailed (falls back to Admin emails) |
+| Sender name | Name shown as the sender on every email (default: Task Tracker) |
 
 ### Dashboard
 Formulas only: pending approval, overdue, done today, and a per-employee table.
