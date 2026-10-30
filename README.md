@@ -5,9 +5,9 @@ A ticketing system for a small team, built on Google Sheets and Google Apps Scri
 - **Admins** add tasks, assign them to employees and approve them.
 - **Tickets are timed:** each task has a date, start time and a 30 / 45 / 60 min limit. Employees see a live countdown; admins see time taken vs limit.
 - **Task managers** add and edit tasks; the admin approves them by email or on the dashboard.
-- **Employees** see only their approved tasks and update status, progress and remarks.
-- **Everyone** gets a daily email. Employees get their open tasks; admins get a summary.
-- **Web dashboard on Vercel** with a password-protected admin page (`/admin`) and a PIN login for employees (`/`).
+- **Employees** see only their approved tasks and update status, progress and remarks. A ticket is locked once marked Done.
+- **Emails** (sender name "Task Tracker"): instant "Send now" emails, approval requests with Approve / Reject buttons, a PIN welcome email for new employees, and an evening summary (employees get tomorrow's list; admins get a summary).
+- **Web dashboard on Vercel** with a sign-in page for three roles, a password-protected admin page, a task manager page and an employee page. Works on phones.
 
 Google Sheets is the database and Apps Script does the work. Vercel (free plan is enough) only hosts the dashboard pages and a small proxy function.
 
@@ -46,10 +46,13 @@ tab (in the sheet or through the dashboard), and the script copies their updates
 | `apps-script/WebApp.gs` | Dashboard backend: logins, admin and employee actions |
 | `apps-script/Api.gs` | JSON API that the Vercel dashboard calls |
 | `apps-script/appsscript.json` | Project manifest (IST time zone, web app settings) |
-| `public/` | Vercel dashboard pages (`index.html` employees, `admin.html` admin) |
-| `api/rpc.js` | Vercel function that forwards dashboard calls to Apps Script |
+| `public/index.html` | "Sign in as" page (Admin / Task manager / Employee) |
+| `public/admin.html`, `task-manager.html`, `employee.html` | Dashboard pages (all use `app.js` + `style.css`) |
+| `public/approve.html` | Confirm page for the Approve / Reject buttons in admin emails |
+| `api/rpc.js` | Vercel function that forwards dashboard calls to Apps Script and checks the task manager PIN |
 | `vercel.json` | Clean URLs, security headers |
-| `docs/sheet-structure.md` | Columns of every tab |
+| `docs/sheet-structure.md` | Columns of every tab and every Settings row |
+| `tests/` | Offline tests: dashboard flows against a mock Apps Script, and ticket timing logic |
 
 ## Setup
 
@@ -106,9 +109,36 @@ If you change the env vars later, redeploy from the Vercel dashboard so they tak
 
 | Who | Where | What |
 |---|---|---|
-| Admin | Dashboard > New task | Pick employee, priority, due date. Tick "Approve now" to send it straight away. |
+| Admin | Dashboard > + or New task | Pick employee, priority, date, start time and 30 / 45 / 60 min limit. "Approve & send now" emails the employee; "Approve, add to daily summary" waits for the evening email. |
 | Task manager | `/task-manager` | Add tasks (they go to the admin for approval), edit or cancel any task. |
-| Admin | Email or Dashboard > Approvals | Approve & send now, Approve (evening summary), Hold or Reject. |
-| Admin | Dashboard > Team | Add or deactivate people, reset PINs. |
-| Employee | Dashboard or their sheet tab | Set status, progress and remarks. |
+| Admin | Email, Overview (top card) or Approvals | Approve & send now, Approve (evening summary), Hold or Reject. |
+| Admin | Dashboard > Team | Add (PIN is emailed), deactivate, reset PIN, or remove people (deletes PIN, email and sheet access). |
+| Employee | `/employee` or their sheet tab | Set status, progress and remarks; see a live countdown. Done locks the ticket. |
 | Everyone | Email, daily at the hour in Settings | Open tasks and summary. |
+
+## Settings you may want to change (Admin sheet > Settings)
+
+| Setting | What it does |
+|---|---|
+| Daily email hour | When the evening summary goes out (IST) |
+| Admin emails | Who gets the admin summary |
+| Approval emails | Who gets task-manager approval requests |
+| Sender name | Name shown on every email |
+| Dashboard URL | Your Vercel link, used in emails |
+
+## Notes
+
+- Each employee needs their own email; it is their login and their sheet access. For testing with one
+  inbox, use Gmail plus-addresses (`you+aryan@gmail.com`, `you+riya@gmail.com`).
+- Free Gmail accounts can email about 100 recipients a day from scripts.
+
+## Running the tests
+
+```
+cd tests
+npm install
+npm test
+```
+
+The tests run the real dashboard code in a headless DOM against a mock Apps Script (including Google's
+POST-then-redirect behaviour), and check the due-time and time-taken calculations from `Code.gs`.
