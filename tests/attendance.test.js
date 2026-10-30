@@ -183,3 +183,13 @@ console.log(pass + ' attendance checks passed');
   ok(n.workingDays === 0 && n.leaves === 0, 'no leaves counted before an employee first checks in');
   console.log(pass + ' attendance checks passed (with monthly report)');
 })();
+
+// ---- Employee's own month ----
+vm.runInContext('this.__e = empAttendance;', ctx);
+(() => {
+  const e = ctx.__e('Aryan', '2026-11');
+  ok(e.summary.name === 'Aryan' && e.summary.leaves === 2 && e.summary.pct === 60 && e.calendar.length === 30, 'employee sees own November stats');
+  ok(e.monthRows.length && e.monthRows.every(r => !('inPhoto' in r) && !('name' in r)), 'employee view has no photos or names');
+  ok(JSON.stringify(e).indexOf('Neha') < 0, "employee view has no one else's data");
+  console.log(pass + ' attendance checks passed (with employee view)');
+})();

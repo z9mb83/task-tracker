@@ -20,7 +20,7 @@ const ALLOWED = new Set([
   'tmLogin',                    // handled here: PIN checked, then managerLogin in Apps Script
   'decisionInfo', 'decide',     // approve/reject links from the admin email (signed token)
   'adminDecideChange', 'adminReopen',
-  'empCheck', 'adminAttendance', 'adminAttPhoto', 'adminSetOffice'   // attendance
+  'empCheck', 'empAttendance', 'adminAttendance', 'adminAttPhoto', 'adminSetOffice'   // attendance
 ]);
 
 function samePin(a, b) {

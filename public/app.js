@@ -583,6 +583,7 @@ function renderEmployee(){
   const list = data.tasks.slice().sort((a,b) => order(a) - order(b) || (a.dueAtMs || 9e15) - (b.dueAtMs || 9e15) || (a.due||'9999').localeCompare(b.due||'9999'));
   $('main').innerHTML = `
     ${attendanceCard()}
+    <div id="myAtt"></div>
     <div class="stats">
       <div class="stat"><div class="n">${open.length}</div><div class="l">Open tasks</div></div>
       <div class="stat bad"><div class="n">${overdue.length}</div><div class="l">Overdue</div></div>
@@ -611,6 +612,7 @@ function renderEmployee(){
         <div class="muted lock-note hidden" style="font-size:12px;margin-top:6px">Marking Done locks this ticket. It can't be changed after saving.</div>`}
       </div>`).join('')}</div>`}`;
   bindAttendanceCard();
+  renderMyAttendance();
   document.querySelectorAll('[data-card]').forEach(card => {
     if (!card.querySelector('[data-save]')) return;   // Done tickets are read-only
     const task = data.tasks.find(t => t.id === card.dataset.card);
@@ -758,12 +760,55 @@ async function openCamera(kind){
     }
     try {
       data = await call('empCheck', token, kind, photo, loc.lat, loc.lng, loc.acc);
-      close(); renderEmployee(); tickCountdowns();
+      myAttAt = 0; close(); renderEmployee(); tickCountdowns();
       toast(kind === 'in' ? 'Checked in at ' + data.attendance.inLabel : 'Checked out. Worked ' + fmtMins(data.attendance.workedMin) + ' today');
     } catch (err) {
       $('camMsg').textContent = err.message; $('camSend').disabled = false; $('camRetake').disabled = false;
     }
   };
+}
+
+// ---------- attendance (employee's own month) ----------
+let myAtt = null, myAttMonth = '', myAttAt = 0;
+async function renderMyAttendance(force){
+  const box = $('myAtt'); if (!box || !data.attendance) return;
+  if (!myAtt || force || Date.now() - myAttAt > 5 * 60000) {
+    if (myAtt) drawMyAttendance();
+    try { myAtt = await quietCall('empAttendance', token, myAttMonth); myAttAt = Date.now(); }
+    catch (e) { if (!myAtt) box.innerHTML = ''; return; }
+  }
+  drawMyAttendance();
+}
+function drawMyAttendance(){
+  const box = $('myAtt'); if (!box || !myAtt) return;
+  const s = myAtt.summary || { workingDays: 0, present: 0, leaves: 0, pct: null, late: 0, early: 0, totalMin: 0, avgMin: 0, leaveDates: [], extraDays: 0 };
+  const months = []; { const d = new Date(); for (let i = 0; i < 6; i++) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); months.push(x.getFullYear() + '-' + pad2(x.getMonth() + 1)); } }
+  box.innerHTML = `<div class="card my-att">
+    <div class="row" style="align-items:center;margin-bottom:10px">
+      <h3 style="margin:0;flex:1">My attendance</h3>
+      <select id="myAttMonth" class="mini-select">${months.map(m => `<option value="${m}" ${m === myAtt.month ? 'selected' : ''}>${esc(new Date(m + '-01T00:00').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }))}</option>`).join('')}</select>
+    </div>
+    <div class="cal-stats">
+      <div><b>${s.present}${s.extraDays ? `<small> +${s.extraDays}</small>` : ''} / ${s.workingDays}</b><span>Days present</span></div>
+      <div class="${s.leaves ? 'bad' : ''}"><b>${s.leaves}</b><span>Leaves</span></div>
+      <div><b>${s.pct == null ? '-' : s.pct + '%'}</b><span>Attendance</span></div>
+      <div class="${s.late ? 'warn' : ''}"><b>${s.late}</b><span>Late</span></div>
+      <div><b>${s.early}</b><span>Left early</span></div>
+      <div><b>${esc(fmtMins(s.totalMin))}</b><span>Total hours</span></div>
+      <div><b>${esc(fmtMins(s.avgMin))}</b><span>Avg / day</span></div>
+      <div class="click" id="myCal" style="background:var(--info-bg)"><b style="color:var(--info)">📅</b><span style="color:var(--info)">View calendar</span></div>
+    </div></div>`;
+  $('myAttMonth').onchange = e => { myAttMonth = e.target.value; renderMyAttendance(true); };
+  $('myCal').onclick = () => showEmpMonth(data.name, {
+    summary: [Object.assign({}, s, { name: data.name })], month: myAtt.month, calendar: myAtt.calendar,
+    monthRows: myAtt.monthRows.map(r => Object.assign({ name: data.name }, r)) });
+}
+/** Like call() but without the full-screen busy overlay. */
+async function quietCall(fn, ...args){
+  const r = await fetch('/api/rpc', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ fn, args }) });
+  const j = await r.json().catch(() => ({ ok:false, error:'Server error.' }));
+  if (!j.ok) throw new Error(j.error || 'Something went wrong.');
+  return j.result;
 }
 
 // ---------- attendance (admin) ----------
@@ -848,12 +893,13 @@ async function renderAttendance(){
 }
 function shortDate(d){ return new Date(d + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
 /** One employee's month as a calendar. */
-function showEmpMonth(name){
-  const s = att.summary.find(x => x.name === name); if (!s) return;
-  const recs = {}; att.monthRows.filter(r => r.name === name).forEach(r => { recs[r.date] = r; });
+function showEmpMonth(name, src){
+  src = src || att;
+  const s = src.summary.find(x => x.name === name); if (!s) return;
+  const recs = {}; src.monthRows.filter(r => r.name === name).forEach(r => { recs[r.date] = r; });
   const leave = new Set(s.leaveDates);
-  const first = att.calendar[0].dow, lead = (first + 6) % 7;   // weeks start Monday
-  const cells = Array(lead).fill('<div class="cal-d empty"></div>').concat(att.calendar.map(d => {
+  const first = src.calendar[0].dow, lead = (first + 6) % 7;   // weeks start Monday
+  const cells = Array(lead).fill('<div class="cal-d empty"></div>').concat(src.calendar.map(d => {
     const r = recs[d.date], n = Number(d.date.slice(8));
     let cls = 'future', body = '';
     if (r) { cls = r.late ? 'late' : 'present'; body = `<div class="cal-t">${esc(r.inLabel.replace(' ', ''))}–${esc((r.outLabel || '…').replace(' ', ''))}</div><div class="cal-h">${esc(fmtMins(r.workedMin))}</div>`;
@@ -864,7 +910,7 @@ function showEmpMonth(name){
     const tags = r ? [r.late ? 'Late' : '', /Left early/.test(r.flags) ? 'Early' : '', /Auto check-out/.test(r.flags) ? 'Auto out' : ''].filter(Boolean) : [];
     return `<div class="cal-d ${cls}" title="${esc(d.date)}"><div class="cal-n">${n}</div>${body}${tags.length ? `<div class="cal-tag">${esc(tags.join(' · '))}</div>` : ''}</div>`;
   }));
-  const monthLabel = new Date(att.month + '-01T00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  const monthLabel = new Date(src.month + '-01T00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
   modal(`<h3>${esc(name)} · ${esc(monthLabel)}</h3>
     <div class="cal-stats">
       <div><b>${s.workingDays}</b><span>Working days</span></div><div><b>${s.present}</b><span>Present</span></div>

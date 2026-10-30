@@ -291,6 +291,9 @@ html.m .att-thumb img,html.m .att-thumb .ph{width:110px;height:110px}
 .cal-key .k.leave{background:var(--bad-bg);border:1px solid #f3c3bd} .cal-key .k.off{background:var(--grey-bg);border:1px solid var(--line)}
 html.m .cal-stats{grid-template-columns:repeat(2,1fr)}
 html.m .cal-d{min-height:52px;padding:3px;font-size:9.5px}
-html.m .cal-tag{display:none}
+html.m .cal-tag{font-size:9px;line-height:1.15}
 html.m .cal-d.present .cal-t,html.m .cal-d.late .cal-t{display:none}
 html.m .cal-h{font-size:10px;color:var(--ink);margin-top:2px}
+.mini-select{width:auto;padding:6px 10px;font-size:13px}
+.cal-stats small{font-size:12px;color:var(--muted);font-weight:500}
+.cal-stats .click{cursor:pointer}

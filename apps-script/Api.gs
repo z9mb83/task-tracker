@@ -19,7 +19,7 @@ const API_FUNCTIONS = [
   'empData', 'empUpdateTask',
   'managerLogin', 'decisionInfo', 'decide',
   'adminDecideChange', 'adminReopen',
-  'empCheck', 'adminAttendance', 'adminAttPhoto', 'adminSetOffice'
+  'empCheck', 'empAttendance', 'adminAttendance', 'adminAttPhoto', 'adminSetOffice'
 ];
 
 function doPost(e) {

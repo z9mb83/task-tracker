@@ -221,15 +221,14 @@ function attendanceToday_(name) {
 }
 
 // ---------- Admin ----------
-function adminAttendance(token, month) {
-  requireSession_(token, 'admin');
+/** Month report shared by the admin and employee views. onlyName limits it to one employee. */
+function monthReport_(month, onlyName) {
   const cfg = attSettings_();
   const now = new Date();
   const today = dayKey_(now);
   month = /^\d{4}-\d{2}$/.test(String(month || '')) ? month : today.slice(0, 7);
-  const sh = attSheet_();
-  const rows = attRows_(sh).map(x => x.v);
-  const employees = getTeamAll_().filter(m => m.role === 'Employee' && m.active).map(m => m.name);
+  const rows = attRows_(attSheet_()).map(x => x.v).filter(r => !onlyName || r[A.NAME - 1] === onlyName);
+  const employees = onlyName ? [onlyName] : getTeamAll_().filter(m => m.role === 'Employee' && m.active).map(m => m.name);
   const rec = r => {
     const inD = r[A.IN - 1], outD = r[A.OUT - 1];
     return {
@@ -243,10 +242,6 @@ function adminAttendance(token, month) {
       photosDeleted: String(r[A.IN_PHOTO - 1]) === 'Deleted'
     };
   };
-  const todayRows = employees.map(n => {
-    const r = rows.find(x => String(x[A.DATE - 1]) === today && x[A.NAME - 1] === n);
-    return r ? rec(r) : { date: today, name: n, absent: true };
-  });
   const monthRows = rows.filter(r => String(r[A.DATE - 1]).slice(0, 7) === month).map(rec)
     .sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
   const names = [...new Set(employees.concat(monthRows.map(r => r.name)))];
@@ -273,14 +268,36 @@ function adminAttendance(token, month) {
              auto: mine.filter(r => /Auto check-out/.test(r.flags)).length,
              early: mine.filter(r => /Left early/.test(r.flags)).length };
   });
+  return { cfg: cfg, now: now, today: today, month: month, rows: rows, rec: rec, employees: employees,
+           monthRows: monthRows, summary: summary, calendar: days };
+}
+
+function adminAttendance(token, month) {
+  requireSession_(token, 'admin');
+  const m = monthReport_(month);
+  const cfg = m.cfg, today = m.today;
+  const todayRows = m.employees.map(n => {
+    const r = m.rows.find(x => String(x[A.DATE - 1]) === today && x[A.NAME - 1] === n);
+    return r ? m.rec(r) : { date: today, name: n, absent: true };
+  });
   return {
-    today: today, month: month, todayRows: todayRows, monthRows: monthRows, summary: summary, calendar: days,
+    today: today, month: m.month, todayRows: todayRows, monthRows: m.monthRows, summary: m.summary, calendar: m.calendar,
     office: { lat: isNaN(cfg.lat) ? null : cfg.lat, lng: isNaN(cfg.lng) ? null : cfg.lng, radius: cfg.radius,
               confirmed: cfg.confirmed, block: cfg.block,
               hours: clock_(atMinutes_(today, cfg.start)) + ' - ' + clock_(atMinutes_(today, cfg.end)),
               lateAfter: clock_(atMinutes_(today, cfg.start + cfg.buffer)),
               autoOut: clock_(atMinutes_(today, cfg.end + cfg.buffer)) }
   };
+}
+
+/** An employee's own month: stats, calendar and days. No photos, nobody else's data. */
+function empAttendance(token, month) {
+  const sess = requireSession_(token, 'employee');
+  const m = monthReport_(month, sess.name);
+  const strip = r => ({ date: r.date, inLabel: r.inLabel, outLabel: r.outLabel, workedMin: r.workedMin,
+                        open: r.open, late: r.late, flags: r.flags });
+  return { today: m.today, month: m.month, name: sess.name, summary: m.summary.find(x => x.name === sess.name),
+           monthRows: m.monthRows.map(strip), calendar: m.calendar };
 }
 
 /** One attendance photo as a data URL (only photos recorded in the Attendance tab). */
