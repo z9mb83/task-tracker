@@ -908,7 +908,8 @@ function showEmpMonth(name, src){
     else if (d.type === 'off') { cls = 'off'; body = '<div class="cal-t">Off</div>'; }
     else if (leave.has(d.date)) { cls = 'leave'; body = '<div class="cal-t">Leave</div>'; }
     const tags = r ? [r.late ? 'Late' : '', /Left early/.test(r.flags) ? 'Early' : '', /Auto check-out/.test(r.flags) ? 'Auto out' : ''].filter(Boolean) : [];
-    return `<div class="cal-d ${cls}" title="${esc(d.date)}"><div class="cal-n">${n}</div>${body}${tags.length ? `<div class="cal-tag">${esc(tags.join(' · '))}</div>` : ''}</div>`;
+    const pick = IS_ADMIN && r && (r.inPhoto || r.outPhoto || r.photosDeleted);
+    return `<div class="cal-d ${cls}${pick ? ' pick' : ''}" title="${esc(d.date)}${pick ? ' · tap for photos' : ''}" ${pick ? `data-day="${esc(d.date)}"` : ''}><div class="cal-n">${n}</div>${body}${tags.length ? `<div class="cal-tag">${esc(tags.join(' · '))}</div>` : ''}</div>`;
   }));
   const monthLabel = new Date(src.month + '-01T00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
   modal(`<h3>${esc(name)} · ${esc(monthLabel)}</h3>
@@ -923,6 +924,25 @@ function showEmpMonth(name, src){
     ${s.leaveDates.length ? `<div class="muted" style="font-size:12.5px;margin-top:8px">Leaves: ${esc(s.leaveDates.map(shortDate).join(', '))}</div>` : ''}
     <div class="actions" style="justify-content:flex-end"><button class="btn ghost" type="button" onclick="closeModal()">Close</button></div>`);
   document.querySelector('.modal').classList.add('wide');
+  document.querySelectorAll('.cal-d[data-day]').forEach(el => el.onclick = () => showDayPhotos(name, recs[el.dataset.day], () => showEmpMonth(name, src)));
+}
+/** Admin: one employee's check-in / check-out photos for one day. */
+function showDayPhotos(name, r, back){
+  const day = new Date(r.date + 'T00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  const slot = (id, label, time) => `<div class="day-ph"><div class="cam-box">${id ? `<div class="muted" data-ph="${esc(id)}" style="padding:30px;text-align:center">Loading…</div>`
+      : `<div class="muted" style="padding:30px;text-align:center">${r.photosDeleted ? 'Photo deleted<br><small>(kept until the 15th of next month)</small>' : 'No photo'}</div>`}</div>
+    <div class="day-cap"><b>${esc(label)}</b> ${esc(time || '-')}</div></div>`;
+  modal(`<h3>${esc(name)} · ${esc(day)}</h3>
+    <div class="day-phs">${slot(r.inPhoto, 'Check in', r.inLabel)}${slot(r.outPhoto, 'Check out', r.outLabel)}</div>
+    <div class="muted" style="font-size:12.5px;margin-top:10px">Worked ${esc(fmtMins(r.workedMin))}${r.late ? ' · <span class="pill p-warn">Late</span>' : ''}${r.flags ? ' · ' + esc(r.flags) : ''}</div>
+    <div class="actions" style="justify-content:space-between"><button class="btn ghost" type="button" id="dayBack">← Back to calendar</button>
+      <button class="btn ghost" type="button" onclick="closeModal()">Close</button></div>`);
+  document.querySelector('.modal').classList.add('wide');
+  $('dayBack').onclick = back;
+  document.querySelectorAll('[data-ph]').forEach(async el => {
+    try { const p = await fetchPhoto(el.dataset.ph); if (el.isConnected) el.outerHTML = `<img src="${p.dataUrl}" alt="${esc(name)} photo">`; }
+    catch (e) { if (el.isConnected) el.textContent = e.message; }
+  });
 }
 function downloadAttCsv(){
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';

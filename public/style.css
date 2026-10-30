@@ -297,3 +297,8 @@ html.m .cal-h{font-size:10px;color:var(--ink);margin-top:2px}
 .mini-select{width:auto;padding:6px 10px;font-size:13px}
 .cal-stats small{font-size:12px;color:var(--muted);font-weight:500}
 .cal-stats .click{cursor:pointer}
+.cal-d.pick{cursor:pointer} .cal-d.pick:hover{box-shadow:0 0 0 2px var(--info)}
+.day-phs{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.day-cap{font-size:13px;margin-top:6px;text-align:center}
+html.m .day-phs{grid-template-columns:1fr}
+html.m .day-ph .cam-box{max-height:42vh}
