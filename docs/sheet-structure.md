@@ -51,8 +51,7 @@
 | Dashboard URL | Vercel link used in emails |
 | Approval emails | Where task-manager tasks needing approval are emailed (falls back to Admin emails) |
 | Sender name | Name shown as the sender on every email (default: Task Tracker) |
-| Office latitude / Office longitude | Office location for check-ins (set from the dashboard) |
-| Office location confirmed | Yes once set from the dashboard |
+| Offices | `Mohali: 30.687737, 76.737623; Chandigarh: 30.734315, 76.787665` (name: latitude, longitude; `;` between offices) |
 | Office radius (m) | Default 150 |
 | Location check | Block / Flag only |
 | Office start / Office end | 10:00 / 18:00 |
@@ -72,7 +71,8 @@ One row per employee per day, written by the dashboard.
 | G | Late (Yes / No) |
 | H | Flags: Left early, Auto check-out, Outside office |
 | I / J | In Photo / Out Photo (Drive links; "Deleted" after cleanup) |
-| K / L | In / Out distance from the office (m) |
+| K / L | In / Out distance from the nearest office (m) |
+| M / N | In / Out office (Mohali / Chandigarh) |
 
 ### Dashboard
 Formulas only: pending approval, overdue, done today, and a per-employee table.

@@ -130,8 +130,8 @@ If you change the env vars later, redeploy from the Vercel dashboard so they tak
 | Approval emails | Who gets task-manager approval requests |
 | Sender name | Name shown on every email |
 | Dashboard URL | Your Vercel link, used in emails |
-| Office latitude / longitude | Set from Dashboard > Attendance > Use my current location (stand in the office) |
-| Office radius (m) | How close a check-in must be (default 150) |
+| Offices | `Mohali: 30.687737, 76.737623; Chandigarh: 30.734315, 76.787665`. Check-in works at any of them and is tagged with the office |
+| Office radius (m) | How close to an office a check-in must be (default 150) |
 | Location check | Block (default) or Flag only |
 | Weekly off, Holidays | Used for working days and leaves in the monthly report (default weekly off: Sunday) |
 | Office start / end, Buffer (min) | 10:00 / 18:00 / 20: late after 10:20, left early before 5:40, auto check-out 6:20 PM |

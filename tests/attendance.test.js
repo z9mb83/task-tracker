@@ -31,7 +31,7 @@ function makeSheet(name, rows) {
   const range = (r, c, nr = 1, nc = 1) => ({
     getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => cell(r + i, c + j))),
     setValues(v) { v.forEach((row, i) => row.forEach((x, j) => { cell(r + i, c + j); data[r + i - 1][c + j - 1] = x; })); return this; },
-    setValue(x) { return this.setValues([[x]]); },
+    setValue(x) { return this.setValues([[x]]); }, getValue: () => cell(r, c),
     setNumberFormat() { return this; }, setFontWeight() { return this; }, setFontColor() { return this; },
     setBackground() { return this; }, setWrap() { return this; }
   });
@@ -40,7 +40,7 @@ function makeSheet(name, rows) {
 }
 const sheets = {
   Settings: makeSheet('Settings', [['Setting', 'Value'], ['Employee sheet ID', 'x'],
-    ['Office latitude', 30.7046], ['Office longitude', 76.7179], ['Office radius (m)', 150], ['Location check', 'Block'],
+    ['Office radius (m)', 150], ['Location check', 'Block'],
     ['Office start', '10:00'], ['Office end', '18:00'], ['Buffer (min)', 20]]),
   Team: makeSheet('Team', [['Name', 'Email', 'Role', 'Active'], ['Aryan', 'a@x.com', 'Employee', 'Yes'], ['Neha', 'n@x.com', 'Employee', 'Yes']])
 };
@@ -74,12 +74,13 @@ vm.createContext(ctx);
 vm.runInContext(['Code.gs', 'WebApp.gs', 'Attendance.gs'].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n') +
   `\nrequireSession_ = (t, role) => { if (t === 'admin') return { role: 'admin' }; if (role === 'admin') throw new Error('Not allowed.'); return { role: 'employee', name: t }; };
    empData = t => ({ attendance: attendanceToday_(t) });
-   ensureAttendanceSettings_(); this.__x = { empCheck, adminAttendance, adminAttPhoto, adminSetOffice, autoCheckout, cleanupAttendancePhotos, attendanceSummaryHtml_, distanceM_ };`, ctx);
+   ensureAttendanceSettings_(); this.__x = { empCheck, adminAttendance, adminAttPhoto, autoCheckout, cleanupAttendancePhotos, attendanceSummaryHtml_, distanceM_ };`, ctx);
 const x = ctx.__x;
 const PHOTO = 'data:image/jpeg;base64,' + Buffer.from('fake-jpeg').toString('base64');
-const OFFICE = [30.7046, 76.7179];
-const near = [30.7050, 76.7182];          // ~50 m away
-const far = [30.7200, 76.7400];           // ~2.7 km away
+const OFFICE = [30.687737, 76.737623];       // Mohali (default Offices setting)
+const near = [30.688137, 76.737923];         // ~50 m from Mohali
+const nearChd = [30.734615, 76.787365];      // ~45 m from Chandigarh
+const far = [30.7100, 76.7050];              // ~4 km from Mohali, ~8 km from Chandigarh
 const throwsMsg = fn => { try { fn(); return 'NO ERROR'; } catch (e) { return e.message; } };
 const att = () => sheets.Attendance.data.slice(1);
 let pass = 0; const ok = (c, m) => { assert.ok(c, m); pass++; console.log('  ✓ ' + m); };
@@ -88,7 +89,8 @@ console.log('attendance');
 ok(Math.abs(x.distanceM_(...OFFICE, ...near) - 50) < 15, 'distance helper ~50 m');
 
 // Far from office: blocked
-ok(/2\d{3} m from the office/.test(throwsMsg(() => x.empCheck('Aryan', 'in', PHOTO, ...far, 10))), 'check-in 2.7 km away is blocked');
+ok(sheets.Settings.data.some(r => r[0] === 'Offices' && /Mohali: 30\.687737, 76\.737623; Chandigarh/.test(r[1])), 'Setup adds both offices to Settings');
+ok(/about \d(\.\d)? km from the Mohali office.*Mohali or Chandigarh/.test(throwsMsg(() => x.empCheck('Aryan', 'in', PHOTO, ...far, 10))), 'check-in 4 km away is blocked, naming both offices');
 ok(/Location is needed/.test(throwsMsg(() => x.empCheck('Aryan', 'in', PHOTO, undefined, undefined, 0))), 'check-in without location is blocked');
 ok(/photo/.test(throwsMsg(() => x.empCheck('Aryan', 'in', 'data:text/html;base64,AAAA', ...near, 10))), 'non-JPEG photo is rejected');
 
@@ -101,7 +103,9 @@ ok(Object.keys(files).length === 1 && files[Object.keys(files)[0]].folder.name =
 
 // 10:35 check-in: late (after 10:20)
 NOW = ist('2026-10-30T10:35');
-r = x.empCheck('Neha', 'in', PHOTO, ...near, 10).attendance;
+r = x.empCheck('Neha', 'in', PHOTO, ...nearChd, 10).attendance;
+ok(r.office === 'Chandigarh' && att()[1][12] === 'Chandigarh', 'Neha checks in at Chandigarh and is tagged Chandigarh');
+ok(att()[0][12] === 'Mohali', 'Aryan was tagged Mohali');
 ok(r.late, 'Neha checks in 10:35 AM and is marked Late');
 ok(/not checked in/.test(throwsMsg(() => x.empCheck('Ravi', 'out', PHOTO, ...near, 10))), 'check-out without check-in is refused');
 
@@ -111,7 +115,7 @@ r = x.empCheck('Aryan', 'out', '', ...near, 10).attendance;
 ok(att()[0][9] === '' && Object.keys(files).length === 2, 'check-out without a photo works and saves no file');
 ok(r.state === 'out' && r.workedMin === 460 && /Left early/.test(r.flags), 'Aryan out 5:30 PM: 460 min, flagged Left early');
 ok(/already checked out/.test(throwsMsg(() => x.empCheck('Aryan', 'out', '', ...near, 10))), 'second check-out is refused');
-ok(/from the office/.test(throwsMsg(() => x.empCheck('Neha', 'out', '', ...far, 10))), 'check-out away from the office is still blocked');
+ok(/km from the/.test(throwsMsg(() => x.empCheck('Neha', 'out', '', ...far, 10))), 'check-out away from the offices is still blocked');
 
 // Neha forgets; at 6:10 PM still open, at 6:45 PM auto check-out records 6:20 PM
 NOW = ist('2026-10-30T18:10');
@@ -153,9 +157,6 @@ ok(att().every(r => r[8] === 'Deleted'), 'sheet photo links marked Deleted');
 ok(att()[2][3] instanceof Date && /Auto check-out/.test(att()[2][7]), 'overnight run closes a missed day');
 
 // Admin sets office location
-x.adminSetOffice('admin', 30.70123, 76.71987, 12);
-ok(sheets.Settings.data.find(r => r[0] === 'Office latitude')[1] === 30.70123 &&
-   sheets.Settings.data.find(r => r[0] === 'Office location confirmed')[1] === 'Yes', 'admin saves office location');
 
 console.log(pass + ' attendance checks passed');
 
@@ -165,7 +166,6 @@ console.log(pass + ' attendance checks passed');
   set('Weekly off', 'Sunday'); set('Holidays', '2026-11-04: Diwali, 2026-11-05');
   sheets.Attendance.data.length = 1;   // fresh month
   sheets.Settings.data.find(r => r[0] === 'Location check')[1] = 'Block';
-  set('Office latitude', OFFICE[0]); set('Office longitude', OFFICE[1]);
   const day = (d, inT, outT) => { NOW = ist(d + 'T' + inT); x.empCheck('Aryan', 'in', PHOTO, ...near, 10); if (outT) { NOW = ist(d + 'T' + outT); x.empCheck('Aryan', 'out', PHOTO, ...near, 10); } };
   day('2026-11-02', '09:55', '18:05');                 // Mon present
   day('2026-11-03', '10:40', '18:00');                 // Tue late

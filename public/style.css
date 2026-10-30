@@ -303,3 +303,4 @@ html.m .cal-h{font-size:10px;color:var(--ink);margin-top:2px}
 html.m .day-phs{grid-template-columns:1fr}
 html.m .day-ph .cam-box{max-height:42vh}
 .day-phs.one{grid-template-columns:minmax(0,420px);justify-content:center}
+.cal-o{font-size:10px;color:var(--info);font-weight:600}

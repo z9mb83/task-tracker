@@ -684,7 +684,7 @@ function attendanceCard(){
       : `<div class="att-big">You haven't checked in yet</div><div class="muted">Office ${esc(a.officeStart)} – ${esc(a.officeEnd)} · late after ${esc(a.lateAfter)}</div>`;
     if (!a.closed) btn = `<button class="btn ok att-btn" data-check="in">📷 Check in</button>`;
   } else if (a.state === 'in') {
-    body = `<div class="att-big">Checked in at ${esc(a.inLabel)}${a.late ? ' <span class="pill p-warn">Late</span>' : ''}</div>
+    body = `<div class="att-big">Checked in at ${esc(a.inLabel)}${a.office && a.offices && a.offices.length > 1 ? ' · ' + esc(a.office) : ''}${a.late ? ' <span class="pill p-warn">Late</span>' : ''}</div>
       <div class="muted"><span data-worked="${a.inMs}" data-cap="${esc(a.autoOutLabel)}">${esc(fmtMins(a.workedMin))}</span> so far · auto check-out at ${esc(a.autoOutLabel)}</div>`;
     btn = `<button class="btn bad att-btn" data-check="out">Check out</button>`;
   } else {
@@ -822,6 +822,7 @@ function drawMyAttendance(){
   $('myAttMonth').onchange = e => { myAttMonth = e.target.value; renderMyAttendance(true); };
   $('myCal').onclick = () => showEmpMonth(data.name, {
     summary: [Object.assign({}, s, { name: data.name })], month: myAtt.month, calendar: myAtt.calendar,
+    offices: (data.attendance && data.attendance.offices || []).length,
     monthRows: myAtt.monthRows.map(r => Object.assign({ name: data.name }, r)) });
 }
 /** Like call() but without the full-screen busy overlay. */
@@ -851,13 +852,15 @@ async function renderAttendance(){
       <span class="ph">📷</span><span class="cap">${esc(label)}</span></button>` : '';
   const photoBtn = (id, label) => id ? `<button type="button" class="photo-chip" data-photo="${esc(id)}">${esc(label)}</button>` : '';
   const months = []; { const d = new Date(); for (let i = 0; i < 6; i++) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); months.push(x.getFullYear() + '-' + pad2(x.getMonth() + 1)); } }
+  const multi = o.offices.length > 1;
+  const offTag = r => multi && r.office ? ` <span class="pill p-info">${esc(r.office)}</span>` : '';
+  const inBy = n => inNow.filter(r => r.office === n).length;
   $('main').innerHTML = `
-    ${o.lat == null || !o.confirmed ? `<div class="card approvals-top"><h3>Set the office location</h3>
-      <p class="muted" style="margin:0 0 10px">${o.lat == null ? 'No office location saved yet, so check-ins are not location-checked.' : 'The saved office location has not been confirmed.'}
-      Open this page on your phone <b>inside the office</b> and tap the button. Check-ins then need to be within ${o.radius} m.</p>
-      <button class="btn" id="setOffice">📍 Use my current location as the office</button></div>` : ''}
+    ${!o.offices.length ? `<div class="card approvals-top"><h3>No office location set</h3>
+      <p class="muted" style="margin:0">Check-ins are not location-checked. Add the offices in the Admin sheet: Settings &gt; <b>Offices</b>,
+      e.g. <code>Mohali: 30.687737, 76.737623; Chandigarh: 30.734315, 76.787665</code>.</p></div>` : ''}
     <div class="stats">
-      <div class="stat ok"><div class="n">${inNow.length}</div><div class="l">In the office now</div></div>
+      <div class="stat ok"><div class="n">${inNow.length}</div><div class="l">In the office now${multi ? '<br>' + o.offices.map(x => esc(x.name) + ' ' + inBy(x.name)).join(' · ') : ''}</div></div>
       <div class="stat"><div class="n">${present.length} / ${att.todayRows.length}</div><div class="l">Checked in today</div></div>
       <div class="stat warn"><div class="n">${present.filter(r => r.late).length}</div><div class="l">Late today</div></div>
       <div class="stat bad"><div class="n">${att.todayRows.filter(r => r.absent).length}</div><div class="l">Not checked in</div></div>
@@ -866,7 +869,7 @@ async function renderAttendance(){
       <tr><th>Employee</th><th>In</th><th>Out</th><th>Worked</th><th>Photos</th><th>Notes</th></tr>
       ${att.todayRows.map(r => r.absent ? `<tr><td class="primary t-title">${esc(r.name)}</td><td colspan="5" class="muted full">Not checked in</td></tr>` : `<tr>
         <td class="primary t-title">${esc(r.name)} ${r.open ? '<span class="pill p-ok">In</span>' : ''}</td>
-        <td data-label="In">${esc(r.inLabel)}</td><td data-label="Out">${esc(r.outLabel || '-')}</td>
+        <td data-label="In">${esc(r.inLabel)}${offTag(r)}</td><td data-label="Out">${esc(r.outLabel || '-')}</td>
         <td data-label="Worked">${esc(fmtMins(r.workedMin))}</td>
         <td data-label="Photos" class="thumbs">${thumb(r.inPhoto, 'In ' + r.inLabel)}${thumb(r.outPhoto, 'Out ' + r.outLabel)}</td>
         <td class="full">${notes(r)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No active employees.</td></tr>'}
@@ -881,7 +884,8 @@ async function renderAttendance(){
       <tr><th>Employee</th><th>Working days</th><th>Present</th><th>Leaves</th><th>Attendance</th><th>Late</th><th>Left early</th><th>Total hours</th><th>Avg / day</th></tr>
       ${att.summary.map(r => `<tr class="click" data-empcal="${esc(r.name)}"><td class="primary t-title">${esc(r.name)}</td>
         <td class="num" data-label="Working days">${r.workingDays}</td>
-        <td class="num" data-label="Present">${r.present}${r.extraDays ? ` <span class="muted">+${r.extraDays}</span>` : ''}</td>
+        <td class="num" data-label="Present">${r.present}${r.extraDays ? ` <span class="muted">+${r.extraDays}</span>` : ''}${multi && r.byOffice && Object.keys(r.byOffice).length
+          ? `<div class="t-sub" style="font-size:11px">${esc(Object.keys(r.byOffice).map(k => k + ' ' + r.byOffice[k]).join(' · '))}</div>` : ''}</td>
         <td class="num" data-label="Leaves">${r.leaves ? `<span class="pill p-bad">${r.leaves}</span>` : 0}</td>
         <td class="num" data-label="Attendance">${r.pct == null ? '-' : r.pct + '%'}</td>
         <td class="num" data-label="Late">${r.late ? `<span class="pill p-warn">${r.late}</span>` : 0}</td>
@@ -893,29 +897,22 @@ async function renderAttendance(){
       <div class="table-wrap"><table class="rt">
       <tr><th>Date</th><th>Employee</th><th>In</th><th>Out</th><th>Worked</th><th>Photos</th><th>Notes</th></tr>
       ${att.monthRows.map(r => `<tr><td class="muted">${esc(new Date(r.date + 'T00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }))}</td>
-        <td class="primary t-title">${esc(r.name)}</td><td data-label="In">${esc(r.inLabel)}</td><td data-label="Out">${esc(r.outLabel || '-')}</td>
+        <td class="primary t-title">${esc(r.name)}</td><td data-label="In">${esc(r.inLabel)}${offTag(r)}</td><td data-label="Out">${esc(r.outLabel || '-')}</td>
         <td data-label="Worked">${esc(fmtMins(r.workedMin))}</td>
         <td data-label="Photos">${r.photosDeleted ? '<span class="muted">Deleted</span>' : photoBtn(r.inPhoto, 'In') + ' ' + photoBtn(r.outPhoto, 'Out')}</td>
         <td class="full">${notes(r)}</td></tr>`).join('')}
       </table></div></details>
-    <div class="muted" style="font-size:12px;margin-top:10px">Working days count up to today; holidays and the weekly off are set in the Settings tab. "+1" = came on a day off. Office ${esc(o.hours)} · late after ${esc(o.lateAfter)} · auto check-out ${esc(o.autoOut)} · photos are deleted on the 15th of the next month.</div></div>`;
+    <div class="muted" style="font-size:12px;margin-top:10px">Working days count up to today; holidays and the weekly off are set in the Settings tab. "+1" = came on a day off. ${o.offices.length ? 'Offices: ' + esc(o.offices.map(x => x.name).join(', ')) + ' (within ' + o.radius + ' m) · ' : ''}Office hours ${esc(o.hours)} · late after ${esc(o.lateAfter)} · auto check-out ${esc(o.autoOut)} · photos are deleted on the 15th of the next month.</div></div>`;
   $('attMonth').onchange = async e => { attMonth = e.target.value; att._stale = true; renderAttendance(); };
   document.querySelectorAll('[data-photo]').forEach(b => b.onclick = () => showPhoto(b.dataset.photo, b.closest('tr').querySelector('.t-title').firstChild.textContent.trim()));
   document.querySelectorAll('[data-empcal]').forEach(tr => tr.onclick = () => showEmpMonth(tr.dataset.empcal));
   $('attCsv').onclick = downloadAttCsv;
   loadThumbs();
-  if ($('setOffice')) $('setOffice').onclick = async () => {
-    const loc = await getLocation();
-    if (loc.error) { toast(loc.error, true); return; }
-    if (loc.acc > 100) { toast('Location is not precise yet (±' + Math.round(loc.acc) + ' m). Try again near a window.', true); return; }
-    try { att = await call('adminSetOffice', token, loc.lat, loc.lng, loc.acc); toast('Office location saved'); renderAttendance(); }
-    catch (err) { toast(err.message, true); }
-  };
 }
 function shortDate(d){ return new Date(d + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
 /** One employee's month as a calendar. */
 function showEmpMonth(name, src){
-  src = src || att;
+  src = src || Object.assign({}, att, { offices: att.office.offices.length });
   const s = src.summary.find(x => x.name === name); if (!s) return;
   const recs = {}; src.monthRows.filter(r => r.name === name).forEach(r => { recs[r.date] = r; });
   const leave = new Set(s.leaveDates);
@@ -923,7 +920,7 @@ function showEmpMonth(name, src){
   const cells = Array(lead).fill('<div class="cal-d empty"></div>').concat(src.calendar.map(d => {
     const r = recs[d.date], n = Number(d.date.slice(8));
     let cls = 'future', body = '';
-    if (r) { cls = r.late ? 'late' : 'present'; body = `<div class="cal-t">${esc(r.inLabel.replace(' ', ''))}–${esc((r.outLabel || '…').replace(' ', ''))}</div><div class="cal-h">${esc(fmtMins(r.workedMin))}</div>`;
+    if (r) { cls = r.late ? 'late' : 'present'; body = `<div class="cal-t">${esc(r.inLabel.replace(' ', ''))}–${esc((r.outLabel || '…').replace(' ', ''))}</div><div class="cal-h">${esc(fmtMins(r.workedMin))}</div>${r.office && src.offices > 1 ? `<div class="cal-o">${esc(r.office)}</div>` : ''}`;
              if (d.type !== 'work') cls += ' extra'; }
     else if (d.type === 'holiday') { cls = 'off'; body = `<div class="cal-t">${esc(d.label || 'Holiday')}</div>`; }
     else if (d.type === 'off') { cls = 'off'; body = '<div class="cal-t">Off</div>'; }
@@ -956,7 +953,7 @@ function showDayPhotos(name, r, back){
   modal(`<h3>${esc(name)} · ${esc(day)}</h3>
     <div class="day-phs ${r.outPhoto ? '' : 'one'}">${slot(r.inPhoto, 'Check in', r.inLabel)}${r.outPhoto ? slot(r.outPhoto, 'Check out', r.outLabel) : ''}</div>
     ${r.outPhoto ? '' : `<div style="text-align:center;font-size:13px;margin-top:4px"><b>Check out</b> ${esc(r.outLabel || '-')}</div>`}
-    <div class="muted" style="font-size:12.5px;margin-top:10px">Worked ${esc(fmtMins(r.workedMin))}${r.late ? ' · <span class="pill p-warn">Late</span>' : ''}${r.flags ? ' · ' + esc(r.flags) : ''}</div>
+    <div class="muted" style="font-size:12.5px;margin-top:10px">${r.office ? 'At <b>' + esc(r.office) + '</b> · ' : ''}Worked ${esc(fmtMins(r.workedMin))}${r.late ? ' · <span class="pill p-warn">Late</span>' : ''}${r.flags ? ' · ' + esc(r.flags) : ''}</div>
     <div class="actions" style="justify-content:space-between"><button class="btn ghost" type="button" id="dayBack">← Back to calendar</button>
       <button class="btn ghost" type="button" onclick="closeModal()">Close</button></div>`);
   document.querySelector('.modal').classList.add('wide');
@@ -972,8 +969,8 @@ function downloadAttCsv(){
   att.summary.forEach(s => lines.push([s.name, s.workingDays, s.present, s.leaves, s.pct == null ? '' : s.pct, s.late, s.early, s.auto, s.extraDays,
     (s.totalMin / 60).toFixed(2), (s.avgMin / 60).toFixed(2), s.leaveDates.join(' ')].map(q).join(',')));
   lines.push('');
-  lines.push(['Date','Employee','Check in','Check out','Worked (h)','Late','Notes'].map(q).join(','));
-  att.monthRows.slice().reverse().forEach(r => lines.push([r.date, r.name, r.inLabel, r.outLabel, (r.workedMin / 60).toFixed(2), r.late ? 'Yes' : '', r.flags].map(q).join(',')));
+  lines.push(['Date','Employee','Office','Check in','Check out','Worked (h)','Late','Notes'].map(q).join(','));
+  att.monthRows.slice().reverse().forEach(r => lines.push([r.date, r.name, r.office, r.inLabel, r.outLabel, (r.workedMin / 60).toFixed(2), r.late ? 'Yes' : '', r.flags].map(q).join(',')));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv' }));
   a.download = 'attendance-' + att.month + '.csv'; document.body.appendChild(a); a.click(); a.remove();

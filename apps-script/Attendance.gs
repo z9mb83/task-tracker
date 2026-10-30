@@ -12,8 +12,8 @@
 
 const ATT_TAB = 'Attendance';
 const ATT_HEADERS = ['Date', 'Employee', 'Check In', 'Check Out', 'Worked (min)', 'Worked', 'Late', 'Flags',
-                     'In Photo', 'Out Photo', 'In Distance (m)', 'Out Distance (m)'];
-const A = { DATE: 1, NAME: 2, IN: 3, OUT: 4, MIN: 5, HRS: 6, LATE: 7, FLAGS: 8, IN_PHOTO: 9, OUT_PHOTO: 10, IN_DIST: 11, OUT_DIST: 12 };
+                     'In Photo', 'Out Photo', 'In Distance (m)', 'Out Distance (m)', 'In Office', 'Out Office'];
+const A = { DATE: 1, NAME: 2, IN: 3, OUT: 4, MIN: 5, HRS: 6, LATE: 7, FLAGS: 8, IN_PHOTO: 9, OUT_PHOTO: 10, IN_DIST: 11, OUT_DIST: 12, IN_OFFICE: 13, OUT_OFFICE: 14 };
 const ATT_COLS = ATT_HEADERS.length;
 const MAX_PHOTO_CHARS = 700000;   // ~500 KB JPEG
 
@@ -23,15 +23,25 @@ function attSettings_() {
   const hm = (v, d) => { const p = parseStart_(v); return p ? p.h * 60 + p.m : d; };
   const num = v => (v === '' || v == null) ? NaN : Number(v);
   return {
-    lat: num(s['Office latitude']), lng: num(s['Office longitude']),
+    offices: parseOffices_(s['Offices'], num(s['Office latitude']), num(s['Office longitude'])),
     radius: Number(s['Office radius (m)']) || 150,
     block: String(s['Location check'] || 'Block').toLowerCase() !== 'flag only',
     start: hm(s['Office start'], 600), end: hm(s['Office end'], 1080),
     buffer: Number(s['Buffer (min)']) || 20,
-    confirmed: String(s['Office location confirmed'] || '').toLowerCase() === 'yes',
     weeklyOff: parseWeeklyOff_(s['Weekly off'] === undefined ? 'Sunday' : s['Weekly off']),
     holidays: parseHolidays_(s['Holidays'])
   };
+}
+
+/** 'Mohali: 30.687737, 76.737623; Chandigarh: 30.734315, 76.787665' -> [{ name, lat, lng }] */
+function parseOffices_(v, oldLat, oldLng) {
+  const out = [];
+  String(v || '').split(/[;\n]+/).forEach(part => {
+    const m = part.trim().match(/^(.+?)\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+    if (m && Math.abs(+m[2]) <= 90 && Math.abs(+m[3]) <= 180) out.push({ name: m[1].trim(), lat: Number(m[2]), lng: Number(m[3]) });
+  });
+  if (!out.length && !isNaN(oldLat) && !isNaN(oldLng)) out.push({ name: 'Office', lat: oldLat, lng: oldLng });   // older single-office setting
+  return out;
 }
 
 const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -81,7 +91,13 @@ function hoursLabel_(min) { min = Math.max(0, Math.round(min || 0)); return Math
 function attSheet_() {
   const ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName(ATT_TAB);
-  if (sh) return sh;
+  if (sh) {
+    if (sh.getRange(1, A.IN_OFFICE).getValue() !== 'In Office') {   // tab made by an older version
+      sh.getRange(1, A.IN_OFFICE, 1, 2).setValues([['In Office', 'Out Office']])
+        .setFontWeight('bold').setFontColor('#ffffff').setBackground('#1f3864');
+    }
+    return sh;
+  }
   sh = ss.insertSheet(ATT_TAB);
   sh.getRange(1, 1, 1, ATT_COLS).setValues([ATT_HEADERS])
     .setFontWeight('bold').setFontColor('#ffffff').setBackground('#1f3864').setWrap(true);
@@ -91,7 +107,7 @@ function attSheet_() {
   sh.getRange(2, A.IN, n, 2).setNumberFormat('dd-mmm h:mm am/pm');
   sh.getRange(2, A.MIN, n, 1).setNumberFormat('0');
   sh.getRange(2, A.IN_PHOTO, n, 2).setNumberFormat('@');
-  [95, 140, 120, 120, 90, 100, 60, 220, 200, 200, 90, 90].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  [95, 140, 120, 120, 90, 100, 60, 220, 200, 200, 90, 90, 100, 100].forEach((w, i) => sh.setColumnWidth(i + 1, w));
   return sh;
 }
 
@@ -113,13 +129,16 @@ function distanceM_(lat1, lng1, lat2, lng2) {
   return Math.round(2 * R * Math.asin(Math.sqrt(a)));
 }
 
-/** Returns { dist, ok }. Allows for the phone's reported accuracy (up to 100 m). */
+/** Nearest office: { dist, ok, office }. Allows for the phone's reported accuracy (up to 100 m). */
 function checkLocation_(cfg, lat, lng, acc) {
-  if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) return { dist: null, ok: false };
-  if (isNaN(cfg.lat) || isNaN(cfg.lng)) return { dist: null, ok: true };   // office not set: don't block
-  const dist = distanceM_(cfg.lat, cfg.lng, lat, lng);
-  return { dist: dist, ok: dist <= cfg.radius + Math.min(Math.max(Number(acc) || 0, 0), 100) };
+  if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) return { dist: null, ok: false, office: '' };
+  if (!cfg.offices.length) return { dist: null, ok: true, office: '' };   // no office set: don't block
+  let best = null;
+  cfg.offices.forEach(o => { const d = distanceM_(o.lat, o.lng, lat, lng); if (!best || d < best.dist) best = { dist: d, office: o.name }; });
+  best.ok = best.dist <= cfg.radius + Math.min(Math.max(Number(acc) || 0, 0), 100);
+  return best;
 }
+function distLabel_(m) { return m >= 1000 ? (Math.round(m / 100) / 10) + ' km' : m + ' m'; }
 
 // ---------- Photos ----------
 function attRootFolder_() {
@@ -162,22 +181,24 @@ function empCheck(token, kind, photo, lat, lng, acc) {
     const day = dayKey_(now);
     const workDay = monthDays_(day.slice(0, 7), cfg).find(d => d.date === day).type === 'work';   // no late / early flags on holidays
     const loc = checkLocation_(cfg, lat, lng, acc);
-    if (loc.dist === null && !isNaN(cfg.lat) && cfg.block) {
+    if (loc.dist === null && cfg.offices.length && cfg.block) {
       throw new Error('Location is needed to check ' + kind + '. Allow location for this site and try again.');
     }
     if (!loc.ok && cfg.block) {
-      throw new Error('You seem to be about ' + loc.dist + ' m from the office. Check-' + kind + ' only works at the office.');
+      throw new Error('You seem to be about ' + distLabel_(loc.dist) + ' from the ' + loc.office + ' office. Check-' + kind +
+        ' only works at ' + (cfg.offices.length > 1 ? 'an office (' + cfg.offices.map(o => o.name).join(' or ') + ')' : 'the office') + '.');
     }
     const sh = attSheet_();
     const rec = findAttRow_(sh, sess.name, day);
-    const flagOutside = !loc.ok && loc.dist !== null ? 'Outside office (' + loc.dist + ' m)' : '';
+    const flagOutside = !loc.ok && loc.dist !== null ? 'Outside office (' + distLabel_(loc.dist) + ' from ' + loc.office + ')' : '';
+    const officeName = loc.ok ? loc.office : '';
 
     if (kind === 'in') {
       if (rec && rec.v[A.IN - 1] instanceof Date) throw new Error('You already checked in today at ' + clock_(rec.v[A.IN - 1]) + '.');
       if (minutesOfDay_(now) >= cfg.end + cfg.buffer) throw new Error('Office hours are over for today.');
       const url = savePhoto_(sess.name, 'in', photo, now);
       const late = workDay && minutesOfDay_(now) > cfg.start + cfg.buffer;
-      sh.appendRow([day, sess.name, now, '', '', '', late ? 'Yes' : 'No', flagOutside, url, '', loc.dist === null ? '' : loc.dist, '']);
+      sh.appendRow([day, sess.name, now, '', '', '', late ? 'Yes' : 'No', flagOutside, url, '', loc.dist === null ? '' : loc.dist, '', officeName, '']);
       sh.getRange(sh.getLastRow(), A.DATE).setNumberFormat('@').setValue(day);
     } else {
       if (!rec || !(rec.v[A.IN - 1] instanceof Date)) throw new Error('You have not checked in today.');
@@ -189,6 +210,7 @@ function empCheck(token, kind, photo, lat, lng, acc) {
       sh.getRange(rec.row, A.OUT, 1, 5).setValues([[now, worked, hoursLabel_(worked), rec.v[A.LATE - 1], flags]]);
       if (url) sh.getRange(rec.row, A.OUT_PHOTO).setValue(url);
       sh.getRange(rec.row, A.OUT_DIST).setValue(loc.dist === null ? '' : loc.dist);
+      sh.getRange(rec.row, A.OUT_OFFICE).setValue(officeName);
     }
   } finally {
     lock.releaseLock();
@@ -203,7 +225,8 @@ function attendanceToday_(name) {
   const day = dayKey_(now);
   const base = { officeStart: clock_(atMinutes_(day, cfg.start)), officeEnd: clock_(atMinutes_(day, cfg.end)),
                  lateAfter: clock_(atMinutes_(day, cfg.start + cfg.buffer)),
-                 closed: minutesOfDay_(now) >= cfg.end + cfg.buffer, needsLocation: !isNaN(cfg.lat) && cfg.block };
+                 closed: minutesOfDay_(now) >= cfg.end + cfg.buffer, needsLocation: cfg.offices.length > 0 && cfg.block,
+                 offices: cfg.offices.map(o => o.name) };
   const sh = SpreadsheetApp.getActive().getSheetByName(ATT_TAB);
   const rec = sh ? findAttRow_(sh, name, day) : null;
   if (!rec || !(rec.v[A.IN - 1] instanceof Date)) return Object.assign(base, { state: 'none' });
@@ -211,7 +234,7 @@ function attendanceToday_(name) {
   const out = r[A.OUT - 1] instanceof Date;
   return Object.assign(base, {
     state: out ? 'out' : 'in',
-    inMs: r[A.IN - 1].getTime(), inLabel: clock_(r[A.IN - 1]),
+    inMs: r[A.IN - 1].getTime(), inLabel: clock_(r[A.IN - 1]), office: String(r[A.IN_OFFICE - 1] || ''),
     outMs: out ? r[A.OUT - 1].getTime() : 0, outLabel: out ? clock_(r[A.OUT - 1]) : '',
     workedMin: out ? Number(r[A.MIN - 1]) || 0
       : Math.max(0, Math.round((Math.min(now, atMinutes_(day, cfg.end + cfg.buffer)) - r[A.IN - 1]) / 60000)),
@@ -239,6 +262,7 @@ function monthReport_(month, onlyName) {
       open: inD instanceof Date && !(outD instanceof Date),
       late: r[A.LATE - 1] === 'Yes', flags: String(r[A.FLAGS - 1] || ''),
       inPhoto: photoId_(r[A.IN_PHOTO - 1]), outPhoto: photoId_(r[A.OUT_PHOTO - 1]),
+      office: String(r[A.IN_OFFICE - 1] || ''), outOffice: String(r[A.OUT_OFFICE - 1] || ''),
       photosDeleted: String(r[A.IN_PHOTO - 1]) === 'Deleted'
     };
   };
@@ -266,7 +290,8 @@ function monthReport_(month, onlyName) {
              days: mine.length, late: mine.filter(r => r.late).length,
              totalMin: total, avgMin: mine.length ? Math.round(total / mine.length) : 0,
              auto: mine.filter(r => /Auto check-out/.test(r.flags)).length,
-             early: mine.filter(r => /Left early/.test(r.flags)).length };
+             early: mine.filter(r => /Left early/.test(r.flags)).length,
+             byOffice: mine.reduce((o, r) => { if (r.office) o[r.office] = (o[r.office] || 0) + 1; return o; }, {}) };
   });
   return { cfg: cfg, now: now, today: today, month: month, rows: rows, rec: rec, employees: employees,
            monthRows: monthRows, summary: summary, calendar: days };
@@ -282,8 +307,7 @@ function adminAttendance(token, month) {
   });
   return {
     today: today, month: m.month, todayRows: todayRows, monthRows: m.monthRows, summary: m.summary, calendar: m.calendar,
-    office: { lat: isNaN(cfg.lat) ? null : cfg.lat, lng: isNaN(cfg.lng) ? null : cfg.lng, radius: cfg.radius,
-              confirmed: cfg.confirmed, block: cfg.block,
+    office: { offices: cfg.offices, radius: cfg.radius, block: cfg.block,
               hours: clock_(atMinutes_(today, cfg.start)) + ' - ' + clock_(atMinutes_(today, cfg.end)),
               lateAfter: clock_(atMinutes_(today, cfg.start + cfg.buffer)),
               autoOut: clock_(atMinutes_(today, cfg.end + cfg.buffer)) }
@@ -295,7 +319,7 @@ function empAttendance(token, month) {
   const sess = requireSession_(token, 'employee');
   const m = monthReport_(month, sess.name);
   const strip = r => ({ date: r.date, inLabel: r.inLabel, outLabel: r.outLabel, workedMin: r.workedMin,
-                        open: r.open, late: r.late, flags: r.flags });
+                        open: r.open, late: r.late, flags: r.flags, office: r.office });
   return { today: m.today, month: m.month, name: sess.name, summary: m.summary.find(x => x.name === sess.name),
            monthRows: m.monthRows.map(strip), calendar: m.calendar };
 }
@@ -310,25 +334,6 @@ function adminAttPhoto(token, fileId) {
   const file = DriveApp.getFileById(fileId);
   if (file.isTrashed()) throw new Error('This photo has been deleted.');
   return { dataUrl: 'data:image/jpeg;base64,' + Utilities.base64Encode(file.getBlob().getBytes()), name: file.getName() };
-}
-
-/** Admin stands in the office and saves the current location as the office. */
-function adminSetOffice(token, lat, lng, acc) {
-  requireSession_(token, 'admin');
-  lat = Number(lat); lng = Number(lng);
-  if (isNaN(lat) || isNaN(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) throw new Error('Could not read your location.');
-  setSetting_('Office latitude', Math.round(lat * 1e6) / 1e6);
-  setSetting_('Office longitude', Math.round(lng * 1e6) / 1e6);
-  setSetting_('Office location confirmed', 'Yes');
-  return adminAttendance(token);
-}
-
-function setSetting_(label, value) {
-  const sh = SpreadsheetApp.getActive().getSheetByName(SETTINGS_TAB);
-  const vals = sh.getRange(1, 1, Math.max(sh.getLastRow(), 1), 1).getValues().map(r => String(r[0]).trim());
-  const i = vals.indexOf(label);
-  if (i >= 0) sh.getRange(i + 1, 2).setValue(value);
-  else sh.appendRow([label, value, '']);
 }
 
 // ---------- Scheduled jobs (triggers created by setup) ----------
@@ -384,8 +389,8 @@ function cleanupAttendancePhotos() {
 function ensureAttendanceSettings_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SETTINGS_TAB);
   const have = sh.getRange(1, 1, Math.max(sh.getLastRow(), 1), 1).getValues().map(r => String(r[0]).trim());
-  [['Office latitude', '', 'Set from the admin dashboard: Attendance > Use my current location (Phase 10, Mohali)'],
-   ['Office longitude', '', 'Set together with the latitude'],
+  [['Offices', 'Mohali: 30.687737, 76.737623; Chandigarh: 30.734315, 76.787665',
+     'Name: latitude, longitude; separate offices with ;  (copy the numbers from the Google Maps link)'],
    ['Office radius (m)', 150, 'How close to the office a check-in must be'],
    ['Location check', 'Block', 'Block = refuse check-ins away from the office; Flag only = allow but flag'],
    ['Office start', '10:00', 'Late after start + buffer'],
@@ -424,7 +429,7 @@ function attendanceSummaryHtml_() {
   const line = employees.map(n => {
     const r = rows.find(x => x[A.NAME - 1] === n);
     if (!r) return [n, '-', '-', '-', 'Not checked in'];
-    return [n, clock_(r[A.IN - 1]), clock_(r[A.OUT - 1]) || '-', r[A.HRS - 1] || '-',
+    return [n, clock_(r[A.IN - 1]) + (r[A.IN_OFFICE - 1] ? ' (' + r[A.IN_OFFICE - 1] + ')' : ''), clock_(r[A.OUT - 1]) || '-', r[A.HRS - 1] || '-',
             [r[A.LATE - 1] === 'Yes' ? 'Late' : '', r[A.FLAGS - 1]].filter(String).join('; ')];
   });
   const present = line.filter(l => l[1] !== '-').length;
