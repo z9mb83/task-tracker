@@ -5,9 +5,9 @@ A ticketing system for a small team, built on Google Sheets and Google Apps Scri
 - **Admins** add tasks, assign them to employees and approve them.
 - **Employees** see only their approved tasks and update status, progress and remarks.
 - **Everyone** gets a daily email. Employees get their open tasks; admins get a summary.
-- **Web dashboard** with a password-protected admin page and a PIN login for employees.
+- **Web dashboard on Vercel** with a password-protected admin page (`/admin`) and a PIN login for employees (`/`).
 
-No servers or paid hosting. Everything runs inside your Google account.
+Google Sheets is the database and Apps Script does the work. Vercel (free plan is enough) only hosts the dashboard pages and a small proxy function.
 
 ## How it fits together
 
@@ -22,7 +22,12 @@ Task Tracker - Admin (Google Sheet)          Task Tracker - Employees (Google Sh
                - every 15 min: push approved tasks, pull employee updates
                - on approval: push immediately
                - daily: email employees and admins
-               - web app: admin + employee dashboards
+               - JSON API (doPost), protected by a shared secret
+                     ^
+                     |  POST {key, fn, args}
+Vercel  /api/rpc  ---+   (adds the secret; browser never sees it)
+        /admin    <- admin dashboard
+        /         <- employee dashboard
 ```
 
 The Admin sheet is the single source of truth. Employees write only to their own
@@ -34,8 +39,12 @@ tab (in the sheet or through the dashboard), and the script copies their updates
 |---|---|
 | `apps-script/Code.gs` | Sync between the two sheets, daily emails, sheet menu, employee tab setup and protection |
 | `apps-script/WebApp.gs` | Dashboard backend: logins, admin and employee actions |
-| `apps-script/Index.html` | Dashboard page (admin and employee views) |
+| `apps-script/Api.gs` | JSON API that the Vercel dashboard calls |
+| `apps-script/Index.html` | Optional: same dashboard served by Apps Script itself |
 | `apps-script/appsscript.json` | Project manifest (IST time zone, web app settings) |
+| `public/` | Vercel dashboard pages (`index.html` employees, `admin.html` admin) |
+| `api/rpc.js` | Vercel function that forwards dashboard calls to Apps Script |
+| `vercel.json` | Clean URLs, security headers |
 | `docs/sheet-structure.md` | Columns of every tab |
 
 ## Setup
@@ -54,19 +63,27 @@ ID (the long string in its URL) next to `Employee sheet ID`.
 6. Save. Pick `setup` in the function dropdown and click **Run**. Approve the permissions
    (on personal Gmail: Advanced > Go to project > Allow).
 
-### 3. Dashboard
+### 3. Apps Script web app (the API)
 1. In Apps Script: **Deploy > New deployment > Web app**.
    - Execute as: **Me**
-   - Who has access: **Anyone**
-2. Copy the web app URL.
-   - Employees: `<URL>`
-   - Admin: `<URL>?page=admin`
-3. Back in the Admin sheet: **Task System > Set dashboard admin password**.
-4. Add employees from the dashboard's **Team** tab. Each one gets a 6-digit PIN. Share it with them
-   together with the employee URL.
+   - Who has access: **Anyone** (needed so Vercel can call it; every call still needs the secret)
+2. Copy the web app URL (ends in `/exec`).
+3. In the Admin sheet: **Task System > Set up Vercel connection**. It shows `APPS_SCRIPT_URL` and a new
+   `API_SECRET`. Copy both.
+4. **Task System > Set dashboard admin password**.
 
-After changing the code later, use **Deploy > Manage deployments > Edit > Version: New version**
-so the same URL serves the new code.
+After changing the Apps Script code later, use **Deploy > Manage deployments > Edit > Version: New version**
+so the `/exec` URL keeps working.
+
+### 4. Vercel
+1. On vercel.com: **Add New > Project**, import this GitHub repo. Framework preset: **Other**. No build command.
+2. Add Environment Variables: `APPS_SCRIPT_URL` and `API_SECRET` (from step 3).
+3. Deploy. Your links:
+   - Admin: `https://<project>.vercel.app/admin`
+   - Employees: `https://<project>.vercel.app/`
+4. Open `/admin`, go to **Team**, and add employees. Each gets a 6-digit PIN to share with the employee link.
+
+If you change the env vars later, redeploy from the Vercel dashboard so they take effect.
 
 ## Security notes
 
@@ -75,7 +92,8 @@ so the same URL serves the new code.
 - Sessions expire after 8 hours.
 - The web app runs as the sheet owner, so keep the Admin sheet shared with admins only.
 - Employees can edit only columns G to I on their own tab in the Employees sheet.
-- This repo contains no sheet IDs, passwords or emails. Those live in the sheets and Script Properties.
+- The Apps Script URL and API secret live only in Vercel env vars; the browser talks to `/api/rpc`, which only allows the dashboard's own actions.
+- This repo contains no sheet IDs, passwords, secrets or emails.
 
 ## Daily use
 

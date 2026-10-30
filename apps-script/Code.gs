@@ -47,6 +47,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Set dashboard admin password', 'setDashboardPassword')
     .addItem('Show dashboard links', 'showDashboardLinks')
+    .addItem('Set up Vercel connection', 'setUpVercelConnection')
     .addToUi();
 }
 

@@ -1,0 +1,6 @@
+{
+  "name": "task-tracker-dashboard",
+  "private": true,
+  "description": "Vercel dashboard for the Google Sheets Task Tracker",
+  "engines": { "node": ">=18" }
+}

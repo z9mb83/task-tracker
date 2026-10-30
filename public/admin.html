@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Admin Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231f3864'/><path d='M9 16.5l4.5 4.5L23 11.5' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="busy" class="busy hidden"></div>
+
+<!-- LOGIN -->
+<div id="loginView" class="login-wrap">
+  <form class="login" id="loginForm" autocomplete="on">
+    <span class="badge-role" id="loginRole"></span>
+    <h1 id="loginTitle"></h1>
+    <p id="loginSub"></p>
+    <div class="field" id="emailField">
+      <label for="loginEmail">Work email</label>
+      <input type="email" id="loginEmail" autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="loginSecret" id="secretLabel"></label>
+      <input type="password" id="loginSecret" autocomplete="current-password">
+    </div>
+    <button class="btn block" type="submit" id="loginBtn">Sign in</button>
+    <div class="err" id="loginErr"></div>
+  </form>
+</div>
+
+<!-- APP -->
+<div id="appView" class="hidden">
+  <header class="top"><div class="top-inner">
+    <div>
+      <h2 id="appTitle"></h2>
+      <div class="sub" id="appSub"></div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn ghost small" id="refreshBtn" type="button">Refresh</button>
+    <button class="btn ghost small" id="logoutBtn" type="button">Sign out</button>
+  </div></header>
+  <nav class="tabs" id="adminTabs"><div class="tabs-inner">
+    <button class="tab active" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="tasks">All tasks</button>
+    <button class="tab" data-tab="approvals">Approvals <span class="count hidden" id="pendingCount"></span></button>
+    <button class="tab" data-tab="newtask">New task</button>
+    <button class="tab" data-tab="team">Team</button>
+  </div></nav>
+  <main id="main"></main>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toast" class="toast hidden"></div>
+
+<script>window.PAGE = 'admin';</script>
+<script src="/app.js"></script>
+</body>
+</html>
