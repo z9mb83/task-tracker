@@ -557,7 +557,7 @@ function openNewTaskModal(preEmp){
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('ov')) closeModal(); });
 
 // ---------- boot ----------
-$('fab').onclick = () => openNewTaskModal(currentTab === 'tasks' ? filters.emp : '');
+$('fab').onclick = () => { if (data) openNewTaskModal(currentTab === 'tasks' ? filters.emp : ''); };
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; if (data) render(); });
 $('logoutBtn').onclick = () => signOut(false);
 $('refreshBtn').onclick = async () => {

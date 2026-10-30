@@ -20,7 +20,7 @@
 
   label{display:block;font-weight:500;margin:0 0 6px;font-size:13px}
   .field{margin-bottom:14px}
-  input[type=text],input[type=email],input[type=password],input[type=date],select,textarea{
+  input[type=text],input[type=email],input[type=password],input[type=date],input[type=time],select,textarea{
     width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fff;outline:none}
   input:focus,select:focus,textarea:focus{border-color:var(--brand-2);box-shadow:0 0 0 3px rgba(44,79,138,.15)}
   textarea{resize:vertical;min-height:70px}
@@ -121,7 +121,7 @@
 .tasks-grid{grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr))}
 
 html.m body{font-size:14px}
-html.m input[type=text],html.m input[type=email],html.m input[type=password],html.m input[type=date],
+html.m input[type=text],html.m input[type=email],html.m input[type=password],html.m input[type=date],html.m input[type=time],
 html.m select,html.m textarea{font-size:16px}               /* stops iPhone zooming into fields */
 html.m main{padding:12px 12px 96px}
 html.m header.top{padding:0 12px}
@@ -210,3 +210,4 @@ td .cd{display:block;margin:4px 0 0;width:max-content}
 html.m td .cd{display:inline-block;margin:0 0 0 6px}
 html.m .time-row > .field{flex:1 1 calc(33% - 8px)}
 html.m .time-row > .field:first-child{flex-basis:100%}
+input[type=date],input[type=time]{min-height:40px}
