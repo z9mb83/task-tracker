@@ -157,14 +157,21 @@ function adminAddTask(token, t) {
     throw new Error('Pick an active employee.');
   }
   const priority = PRIORITIES.includes(t.priority) ? t.priority : 'Medium';
-  const approval = t.approveNow ? 'Approved' : 'Pending';
+  const approval = (t.approveNow || t.sendNow) ? 'Approved' : 'Pending';
   const due = parseDay_(t.due);
 
   const sh = SpreadsheetApp.getActive().getSheetByName(TASKS_TAB);
   const row = firstEmptyTaskRow_(sh);
   sh.getRange(row, C.TASK, 1, 6).setValues([[task, String(t.details || '').trim(), assignee, priority, due || '', approval]]);
   syncNow();
-  return adminData(token);
+  let emailed = 0;
+  if (t.sendNow) {
+    const vals = sh.getRange(row, 1, 1, ADMIN_COLS).getValues()[0];
+    if (vals[C.ID - 1]) emailed = sendNewTaskEmails_([vals], getSettings_());
+  }
+  const data = adminData(token);
+  data.emailed = emailed;
+  return data;
 }
 
 function adminUpdateTask(token, id, t) {
@@ -215,7 +222,7 @@ function adminAddEmployee(token, e) {
     pin = newPin_(email);
   }
   const data = adminData(token);
-  data.newPin = pin ? { name: name, email: email, pin: pin } : null;
+  data.newPin = pin ? { name: name, email: email, pin: pin, emailed: sendPinEmail_(name, email, pin, true) } : null;
   return data;
 }
 
@@ -234,7 +241,8 @@ function adminResetPin(token, name) {
   const m = getTeamAll_().find(x => x.name === name);
   if (!m || m.role !== 'Employee') throw new Error('Employee not found.');
   const data = adminData(token);
-  data.newPin = { name: m.name, email: m.email, pin: newPin_(m.email) };
+  const pin = newPin_(m.email);
+  data.newPin = { name: m.name, email: m.email, pin: pin, emailed: sendPinEmail_(m.name, m.email, pin, false) };
   data.team.forEach(x => { if (x.name === m.name) x.hasPin = true; });
   return data;
 }
@@ -286,6 +294,34 @@ function empUpdateTask(token, id, status, progress, remarks) {
   tab.getRange(idx + 2, E.STATUS, 1, 3).setValues([[status, p, String(remarks || '').slice(0, 2000)]]);
   syncNow();
   return empData(token);
+}
+
+/** Emails the employee their dashboard link and PIN. Returns true if sent. */
+function sendPinEmail_(name, email, pin, isNew) {
+  try {
+    const s = getSettings_();
+    const brand = String(s['Company name'] || '');
+    const link = String(s['Dashboard URL'] || '').trim();
+    const first = esc_(String(name).split(' ')[0]);
+    let html = '<p>Hi ' + first + ',</p>' +
+      (isNew ? '<p>You have been added to the ' + esc_(brand ? brand + ' ' : '') + 'task tracker. ' +
+               'Your tasks will appear on your dashboard, and you will get a summary email every evening.</p>'
+             : '<p>Your task dashboard PIN has been reset.</p>') +
+      '<table style="border-collapse:collapse;margin:12px 0">' +
+      (link ? '<tr><td style="padding:4px 12px 4px 0;color:#6b7487">Dashboard</td><td><a href="' + link + '">' + esc_(link) + '</a></td></tr>' : '') +
+      '<tr><td style="padding:4px 12px 4px 0;color:#6b7487">Email</td><td><b>' + esc_(email) + '</b></td></tr>' +
+      '<tr><td style="padding:4px 12px 4px 0;color:#6b7487">PIN</td><td style="font-size:20px;letter-spacing:3px"><b>' + pin + '</b></td></tr>' +
+      '</table>' +
+      (link ? '<p><a href="' + link + '" style="background:#1f3864;color:#fff;padding:9px 16px;border-radius:6px;text-decoration:none;display:inline-block">Open my tasks</a></p>' : '') +
+      '<p style="color:#6b7487;font-size:12px">Keep this PIN private. Ask your admin to reset it if you think someone else knows it.</p>';
+    MailApp.sendEmail({ to: email,
+      subject: (brand ? brand + ' ' : '') + (isNew ? 'Your task dashboard login' : 'Your new task dashboard PIN'),
+      htmlBody: wrap_(html) });
+    return true;
+  } catch (e) {
+    Logger.log('PIN email to ' + email + ' failed: ' + e);
+    return false;
+  }
 }
 
 // ---------- Helpers ----------

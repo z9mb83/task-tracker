@@ -207,6 +207,43 @@ function syncNow() {
   }
 }
 
+/** Instant email to the assignee (dashboard "Send now"). Returns how many emails went out. */
+function sendNewTaskEmails_(rows, s) {
+  let sent = 0;
+  const team = getTeam_();
+  const brand = s['Company name'] ? s['Company name'] + ' ' : '';
+  const link = String(s['Dashboard URL'] || '').trim() ||
+    'https://docs.google.com/spreadsheets/d/' + s['Employee sheet ID'];
+  const byPerson = {};
+  rows.forEach(r => {
+    const name = r[C.ASSIGNEE - 1];
+    (byPerson[name] = byPerson[name] || []).push(r);
+  });
+  Object.keys(byPerson).forEach(name => {
+    const m = team.find(x => x.name === name && x.role === 'Employee');
+    if (!m || !m.email) return;
+    const list = byPerson[name];
+    let html = '<p>Hi ' + esc_(name.split(' ')[0]) + ',</p><p>' +
+      (list.length === 1 ? 'A new task has been assigned to you:' : list.length + ' new tasks have been assigned to you:') + '</p>';
+    list.forEach(r => {
+      html += '<div style="border:1px solid #e3e7ef;border-left:4px solid #1f3864;border-radius:8px;padding:12px 14px;margin:10px 0">' +
+        '<div style="font-size:15px;font-weight:bold">' + esc_(r[C.TASK - 1]) + '</div>' +
+        (r[C.DETAILS - 1] ? '<div style="color:#444;margin-top:6px;white-space:pre-wrap">' + esc_(r[C.DETAILS - 1]) + '</div>' : '') +
+        '<div style="color:#6b7487;font-size:13px;margin-top:8px">' + esc_(r[C.ID - 1]) +
+        (r[C.PRIORITY - 1] ? ' &nbsp;|&nbsp; Priority: <b>' + esc_(r[C.PRIORITY - 1]) + '</b>' : '') +
+        ' &nbsp;|&nbsp; Due: <b>' + (fmtDate_(r[C.DUE - 1]) || 'No due date') + '</b></div></div>';
+    });
+    html += '<p><a href="' + link + '" style="background:#1f3864;color:#fff;padding:9px 16px;border-radius:6px;text-decoration:none;display:inline-block">Open my tasks</a></p>' +
+      '<p style="color:#6b7487;font-size:12px">Update the status there as you work on it.</p>';
+    const subject = brand + (list.length === 1 ? 'New task: ' + String(list[0][C.TASK - 1]).slice(0, 80) : list.length + ' new tasks assigned to you');
+    try {
+      MailApp.sendEmail({ to: m.email, subject: subject, htmlBody: wrap_(html) });
+      sent++;
+    } catch (e) { Logger.log('New-task email to ' + m.email + ' failed: ' + e); }
+  });
+  return sent;
+}
+
 // ---------- Daily email ----------
 function sendDailyEmails() {
   syncNow();
@@ -216,7 +253,8 @@ function sendDailyEmails() {
   const todayKey = dayKey_(new Date());
   const since = new Date(Date.now() - 86400000);
   const brand = s['Company name'] ? s['Company name'] + ' ' : '';
-  const empUrl = 'https://docs.google.com/spreadsheets/d/' + s['Employee sheet ID'];
+  const empUrl = String(s['Dashboard URL'] || '').trim() || 'https://docs.google.com/spreadsheets/d/' + s['Employee sheet ID'];
+  const tomorrowLabel = Utilities.formatDate(new Date(Date.now() + 86400000), TZ, 'EEE, dd MMM');
   const adminUrl = SpreadsheetApp.getActive().getUrl();
   const dateLabel = Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy');
 
@@ -233,19 +271,19 @@ function sendDailyEmails() {
 
       const overdue = open.filter(isOverdue);
       let html = '<p>Hi ' + esc_(m.name.split(' ')[0]) + ',</p>' +
-        '<p>You have <b>' + open.length + '</b> open task(s)' +
+        '<p>Here is your list for tomorrow. You have <b>' + open.length + '</b> open task(s)' +
         (overdue.length ? ', <b style="color:#c00000">' + overdue.length + ' overdue</b>' : '') + '.</p>';
       if (open.length) {
         html += table_(['ID', 'Task', 'Priority', 'Due', 'Status', 'Progress'],
-          open.map(t => [t.id, t.task, t.priority, fmtDate_(t.due), t.status, pct_(t.progress)]),
+          open.map(t => [t.id, (t.approvedOn instanceof Date && t.approvedOn >= since ? 'NEW: ' : '') + t.task, t.priority, fmtDate_(t.due), t.status, pct_(t.progress)]),
           open.map(t => isOverdue(t)));
       }
       if (doneToday.length) {
         html += '<p style="margin-top:16px">Completed in the last 24 hours: ' +
           doneToday.map(t => esc_(t.task)).join(', ') + '</p>';
       }
-      html += '<p><a href="' + empUrl + '">Open your task sheet</a> and update Status, Progress % and Remarks.</p>';
-      MailApp.sendEmail({ to: m.email, subject: brand + 'Your tasks for ' + dateLabel, htmlBody: wrap_(html) });
+      html += '<p><a href="' + empUrl + '">Open my tasks</a> and update Status, Progress % and Remarks.</p>';
+      MailApp.sendEmail({ to: m.email, subject: brand + 'Your tasks for tomorrow, ' + tomorrowLabel, htmlBody: wrap_(html) });
     });
   }
 
@@ -426,7 +464,8 @@ function getAdminTasks_() {
     .map(r => ({
       id: r[C.ID - 1], task: r[C.TASK - 1], assignee: r[C.ASSIGNEE - 1], priority: r[C.PRIORITY - 1],
       due: r[C.DUE - 1], approval: r[C.APPROVAL - 1], status: r[C.STATUS - 1],
-      progress: r[C.PROGRESS - 1], remarks: r[C.REMARKS - 1], completed: r[C.COMPLETED - 1]
+      progress: r[C.PROGRESS - 1], remarks: r[C.REMARKS - 1], completed: r[C.COMPLETED - 1],
+      approvedOn: r[C.APPROVED_ON - 1]
     }));
 }
 

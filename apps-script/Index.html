@@ -385,19 +385,25 @@ function renderNewTask(){
         <div class="field"><label>Due date</label><input type="date" id="ntDue" min="${esc(data.today)}"></div>
       </div>
       <div class="field"><label class="switch"><input type="checkbox" id="ntApprove" checked> Approve now (sends it to the employee straight away)</label></div>
-      <button class="btn" type="submit" id="ntBtn">Create task</button>
+      <div class="row" style="gap:8px">
+        <button class="btn ghost" type="submit" data-mode="summary">Add to daily summary</button>
+        <button class="btn" type="submit" data-mode="now">Send now</button>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:8px">Send now approves the task and emails the employee straight away. Otherwise it appears in tonight's summary email for tomorrow.</div>
     </form>`}</div>`;
   const f = $('ntForm'); if (!f) return;
   f.onsubmit = async e => {
     e.preventDefault();
     if (!$('ntEmp').value) { toast('Pick an employee.', true); return; }
-    $('ntBtn').disabled = true;
+    const sendNow = !!(e.submitter && e.submitter.dataset.mode === 'now');
+    const btns = f.querySelectorAll('button[type=submit]'); btns.forEach(b => b.disabled = true);
+    const who = $('ntEmp').value;
     try {
-      data = await call('adminAddTask', token, { task:$('ntTask').value, details:$('ntDetails').value, assignee:$('ntEmp').value,
-        priority:$('ntPrio').value, due:$('ntDue').value, approveNow:$('ntApprove').checked });
-      toast('Task created for ' + $('ntEmp').value);
+      data = await call('adminAddTask', token, { task:$('ntTask').value, details:$('ntDetails').value, assignee:who,
+        priority:$('ntPrio').value, due:$('ntDue').value, approveNow:$('ntApprove').checked, sendNow });
+      toast(addedMsg(who, sendNow));
       renderNewTask(); $('pendingCount').textContent = data.stats.pending;
-    } catch (err) { toast(err.message, true); $('ntBtn').disabled = false; }
+    } catch (err) { toast(err.message, true); btns.forEach(b => b.disabled = false); }
   };
 }
 
@@ -447,7 +453,7 @@ function renderTeam(){
 function showPin(p){
   const msg = `Your task dashboard login\nEmail: ${p.email}\nPIN: ${p.pin}`;
   modal(`<h3>Login PIN for ${esc(p.name)}</h3>
-    <p class="muted">Share this with ${esc(p.name)}. It is shown only once; you can reset it later from the Team tab.</p>
+    <p class="muted">${p.emailed ? `Emailed to ${esc(p.email)} with the dashboard link. ` : `<b style="color:var(--bad)">The email could not be sent</b>, so share it with ${esc(p.name)} yourself. `}It is shown only once; you can reset it later from the Team tab.</p>
     <div class="pin">${esc(p.pin)}</div>
     <div class="muted" style="margin-bottom:12px">Email: ${esc(p.email)}</div>
     <div class="actions"><button class="btn ghost" id="cpPin">Copy login details</button><button class="btn" id="okPin">Done</button></div>`);
@@ -532,6 +538,11 @@ function renderEmployee(){
   });
 }
 
+function addedMsg(who, sendNow){
+  if (sendNow) return data && data.emailed ? 'Task sent to ' + who + ' by email' : 'Task created for ' + who + ', but the email could not be sent (check their email in Team)';
+  return 'Task added. ' + who + ' will see it in tonight\'s summary.';
+}
+
 // ---------- quick "+" task modal ----------
 function openNewTaskModal(preEmp){
   const emps = activeEmployees();
@@ -548,20 +559,24 @@ function openNewTaskModal(preEmp){
         <div class="field"><label>Due date</label><input type="date" id="qtDue" min="${esc(data.today)}"></div>
       </div>
       <div class="field"><label class="switch"><input type="checkbox" id="qtApprove" checked> Approve now (sends it to the employee straight away)</label></div>
-      <div class="actions"><button class="btn ghost" type="button" id="qtCancel">Cancel</button><button class="btn" type="submit" id="qtBtn">Create task</button></div>
+      <div class="actions"><button class="btn ghost" type="button" id="qtCancel">Cancel</button>
+        <button class="btn ghost" type="submit" data-mode="summary">Add to daily summary</button>
+        <button class="btn" type="submit" data-mode="now">Send now</button></div>
+      <div class="muted" style="font-size:12px;margin-top:8px">Send now approves the task and emails the employee straight away. Otherwise it appears in tonight's summary email for tomorrow.</div>
     </form>`);
   $('qtTask').focus();
   $('qtCancel').onclick = closeModal;
   $('qtForm').onsubmit = async e => {
     e.preventDefault();
     if (!$('qtEmp').value) { toast('Pick an employee.', true); return; }
-    $('qtBtn').disabled = true;
+    const sendNow = !!(e.submitter && e.submitter.dataset.mode === 'now');
+    const btns = $('qtForm').querySelectorAll('button[type=submit]'); btns.forEach(b => b.disabled = true);
     const who = $('qtEmp').value;
     try {
       data = await call('adminAddTask', token, { task:$('qtTask').value, details:$('qtDetails').value, assignee:who,
-        priority:$('qtPrio').value, due:$('qtDue').value, approveNow:$('qtApprove').checked });
-      closeModal(); render(); toast('Task created for ' + who);
-    } catch (err) { toast(err.message, true); $('qtBtn').disabled = false; }
+        priority:$('qtPrio').value, due:$('qtDue').value, approveNow:$('qtApprove').checked, sendNow });
+      closeModal(); render(); toast(addedMsg(who, sendNow));
+    } catch (err) { toast(err.message, true); btns.forEach(b => b.disabled = false); }
   };
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('ov')) closeModal(); });
