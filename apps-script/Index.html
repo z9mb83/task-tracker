@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f4f6fa; --card:#fff; --ink:#1b2333; --muted:#6b7487; --line:#e3e7ef;
+    --brand:#1f3864; --brand-2:#2c4f8a; --accent:#e8eef8;
+    --ok:#1e8e4e; --ok-bg:#e3f4ea; --warn:#a86a00; --warn-bg:#fff4dc;
+    --bad:#c0392b; --bad-bg:#fde8e6; --info:#2c5fb3; --info-bg:#e5eefc; --grey-bg:#eef0f4;
+    --radius:12px; --shadow:0 1px 2px rgba(16,24,40,.06),0 2px 8px rgba(16,24,40,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.45}
+  button,input,select,textarea{font:inherit;color:inherit}
+  .hidden{display:none!important}
+
+  /* Login */
+  .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+  .login{background:var(--card);border-radius:16px;box-shadow:var(--shadow);padding:32px;width:100%;max-width:380px}
+  .login h1{font-size:20px;margin:0 0 4px}
+  .login p{color:var(--muted);margin:0 0 20px}
+  .badge-role{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+    background:var(--accent);color:var(--brand);padding:3px 8px;border-radius:20px;margin-bottom:12px}
+
+  label{display:block;font-weight:500;margin:0 0 6px;font-size:13px}
+  .field{margin-bottom:14px}
+  input[type=text],input[type=email],input[type=password],input[type=date],select,textarea{
+    width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fff;outline:none}
+  input:focus,select:focus,textarea:focus{border-color:var(--brand-2);box-shadow:0 0 0 3px rgba(44,79,138,.15)}
+  textarea{resize:vertical;min-height:70px}
+  .btn{border:0;border-radius:8px;padding:9px 16px;font-weight:600;cursor:pointer;background:var(--brand);color:#fff}
+  .btn:hover{background:var(--brand-2)}
+  .btn:disabled{opacity:.55;cursor:default}
+  .btn.ghost{background:transparent;color:var(--brand);border:1px solid var(--line)}
+  .btn.ghost:hover{background:var(--accent)}
+  .btn.small{padding:5px 10px;font-size:12px}
+  .btn.ok{background:var(--ok)} .btn.bad{background:var(--bad)}
+  .btn.block{width:100%}
+  .err{color:var(--bad);font-size:13px;min-height:18px;margin-top:8px}
+
+  /* Shell */
+  header.top{background:var(--brand);color:#fff;padding:0 20px}
+  .top-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;gap:16px;height:58px}
+  .top h2{font-size:16px;margin:0;font-weight:600}
+  .top .sub{opacity:.75;font-size:13px}
+  .top .spacer{flex:1}
+  .top .btn.ghost{color:#fff;border-color:rgba(255,255,255,.35)}
+  .top .btn.ghost:hover{background:rgba(255,255,255,.12)}
+  nav.tabs{background:#fff;border-bottom:1px solid var(--line);padding:0 20px;overflow-x:auto}
+  .tabs-inner{max-width:1200px;margin:0 auto;display:flex;gap:4px}
+  .tab{background:none;border:0;padding:14px 14px 12px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+  .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+  .tab .count{background:var(--bad);color:#fff;border-radius:10px;font-size:11px;padding:1px 6px;margin-left:4px}
+  main{max-width:1200px;margin:0 auto;padding:20px}
+  .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-bottom:18px}
+  .card h3{margin:0 0 12px;font-size:15px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+  .row > .field{flex:1;min-width:160px}
+
+  /* Stats */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px}
+  .stat{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;border-left:4px solid var(--brand)}
+  .stat .n{font-size:26px;font-weight:700}
+  .stat .l{color:var(--muted);font-size:12.5px}
+  .stat.bad{border-left-color:var(--bad)} .stat.bad .n{color:var(--bad)}
+  .stat.warn{border-left-color:var(--warn)} .stat.ok{border-left-color:var(--ok)}
+
+  /* Tables */
+  .table-wrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr.click{cursor:pointer} tr.click:hover td{background:#fafbfd}
+  td.num{text-align:center}
+  .t-title{font-weight:600}
+  .t-sub{color:var(--muted);font-size:12.5px;margin-top:2px;max-width:420px}
+  .pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:20px;white-space:nowrap}
+  .p-ok{background:var(--ok-bg);color:var(--ok)} .p-bad{background:var(--bad-bg);color:var(--bad)}
+  .p-warn{background:var(--warn-bg);color:var(--warn)} .p-info{background:var(--info-bg);color:var(--info)}
+  .p-grey{background:var(--grey-bg);color:var(--muted)}
+  .overdue{color:var(--bad);font-weight:600}
+  .bar{height:6px;background:var(--grey-bg);border-radius:4px;overflow:hidden;width:90px;margin-top:6px}
+  .bar > i{display:block;height:100%;background:var(--ok)}
+  .empty{color:var(--muted);text-align:center;padding:24px}
+
+  /* Employee cards */
+  .tasks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+  .tcard{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;border-top:4px solid var(--brand)}
+  .tcard.is-overdue{border-top-color:var(--bad)}
+  .tcard.is-done{border-top-color:var(--ok);opacity:.8}
+  .tcard .meta{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px;font-size:12.5px;color:var(--muted)}
+  .seg{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .seg button{border:1px solid var(--line);background:#fff;border-radius:20px;padding:5px 11px;font-size:12.5px;cursor:pointer}
+  .seg button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  input[type=range]{width:100%}
+
+  /* Modal + toast */
+  .overlay{position:fixed;inset:0;background:rgba(16,24,40,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20}
+  .modal{background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:90vh;overflow:auto;padding:22px}
+  .modal h3{margin:0 0 14px}
+  .modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+  .pin{font-size:30px;font-weight:700;letter-spacing:.25em;text-align:center;background:var(--accent);color:var(--brand);border-radius:10px;padding:14px;margin:12px 0}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;z-index:30;box-shadow:var(--shadow)}
+  .toast.bad{background:var(--bad)}
+  .busy{position:fixed;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,#7fa6e6,transparent);background-size:50% 100%;animation:slide 1s linear infinite;z-index:40}
+  @keyframes slide{from{background-position:-50% 0}to{background-position:150% 0}}
+  .muted{color:var(--muted)}
+  .switch{cursor:pointer}
+  @media (max-width:640px){
+    main{padding:14px}
+    .top-inner{height:auto;padding:10px 0;flex-wrap:wrap}
+    .hide-sm{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="busy" class="busy hidden"></div>
+
+<!-- LOGIN -->
+<div id="loginView" class="login-wrap">
+  <form class="login" id="loginForm" autocomplete="on">
+    <span class="badge-role" id="loginRole"></span>
+    <h1 id="loginTitle"></h1>
+    <p id="loginSub"></p>
+    <div class="field" id="emailField">
+      <label for="loginEmail">Work email</label>
+      <input type="email" id="loginEmail" autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="loginSecret" id="secretLabel"></label>
+      <input type="password" id="loginSecret" autocomplete="current-password">
+    </div>
+    <button class="btn block" type="submit" id="loginBtn">Sign in</button>
+    <div class="err" id="loginErr"></div>
+  </form>
+</div>
+
+<!-- APP -->
+<div id="appView" class="hidden">
+  <header class="top"><div class="top-inner">
+    <div>
+      <h2 id="appTitle"></h2>
+      <div class="sub" id="appSub"></div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn ghost small" id="refreshBtn" type="button">Refresh</button>
+    <button class="btn ghost small" id="logoutBtn" type="button">Sign out</button>
+  </div></header>
+  <nav class="tabs" id="adminTabs"><div class="tabs-inner">
+    <button class="tab active" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="tasks">All tasks</button>
+    <button class="tab" data-tab="approvals">Approvals <span class="count hidden" id="pendingCount"></span></button>
+    <button class="tab" data-tab="newtask">New task</button>
+    <button class="tab" data-tab="team">Team</button>
+  </div></nav>
+  <main id="main"></main>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toast" class="toast hidden"></div>
+
+<script>
+const PAGE = <?= JSON.stringify(page) ?>;
+const BRAND = <?= JSON.stringify(brand) ?>;
+const STATUSES = ['Not Started','In Progress','Blocked','Done'];
+const PRIORITIES = ['High','Medium','Low'];
+const APPROVALS = ['Pending','Approved','Rejected','On Hold'];
+
+let token = null, data = null, currentTab = 'overview';
+const filters = { q:'', emp:'', approval:'', status:'' };
+const store = {
+  get(){ try{ return sessionStorage.getItem('tt_'+PAGE); }catch(e){ return null; } },
+  set(v){ try{ v ? sessionStorage.setItem('tt_'+PAGE, v) : sessionStorage.removeItem('tt_'+PAGE); }catch(e){} }
+};
+
+// ---------- helpers ----------
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function call(fn, ...args){
+  $('busy').classList.remove('hidden');
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(r => { $('busy').classList.add('hidden'); resolve(r); })
+      .withFailureHandler(e => {
+        $('busy').classList.add('hidden');
+        const msg = (e && e.message) || String(e);
+        if (msg.indexOf('SESSION_EXPIRED') >= 0) { signOut(true); reject(new Error('Your session expired. Please sign in again.')); return; }
+        reject(new Error(msg));
+      })[fn](...args);
+  });
+}
+function toast(msg, bad){
+  const t = $('toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : '');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add('hidden'), 3200);
+}
+function statusPill(s){
+  const cls = {'Done':'p-ok','Blocked':'p-bad','In Progress':'p-info','Not Started':'p-grey'}[s] || 'p-grey';
+  return s ? `<span class="pill ${cls}">${esc(s)}</span>` : '<span class="muted">-</span>';
+}
+function approvalPill(a){
+  const cls = {'Approved':'p-ok','Rejected':'p-bad','Pending':'p-warn','On Hold':'p-grey'}[a] || 'p-grey';
+  return `<span class="pill ${cls}">${esc(a || '-')}</span>`;
+}
+function prioPill(p){
+  const cls = {'High':'p-bad','Medium':'p-warn','Low':'p-grey'}[p] || 'p-grey';
+  return p ? `<span class="pill ${cls}">${esc(p)}</span>` : '';
+}
+function bar(p){ const v = Math.round((p||0)*100); return `<div class="muted" style="font-size:12px">${v}%</div><div class="bar"><i style="width:${v}%"></i></div>`; }
+function options(list, sel, blank){ return (blank !== undefined ? `<option value="">${esc(blank)}</option>` : '') + list.map(x => `<option ${x===sel?'selected':''}>${esc(x)}</option>`).join(''); }
+function modal(html){ $('modalRoot').innerHTML = `<div class="overlay" id="ov"><div class="modal">${html}</div></div>`;
+  $('ov').addEventListener('click', e => { if (e.target.id === 'ov') closeModal(); }); }
+function closeModal(){ $('modalRoot').innerHTML = ''; }
+
+// ---------- login ----------
+function setupLogin(){
+  const admin = PAGE === 'admin';
+  $('loginRole').textContent = admin ? 'Admin' : 'Employee';
+  $('loginTitle').textContent = (BRAND ? BRAND + ' ' : '') + (admin ? 'Admin dashboard' : 'My tasks');
+  $('loginSub').textContent = admin ? 'Enter the admin password to manage tasks and your team.' : 'Sign in with your work email and the PIN your admin gave you.';
+  $('emailField').classList.toggle('hidden', admin);
+  $('secretLabel').textContent = admin ? 'Admin password' : 'PIN';
+  if (!admin) $('loginSecret').setAttribute('inputmode','numeric');
+  $('loginForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    $('loginErr').textContent = ''; $('loginBtn').disabled = true;
+    try {
+      const r = await call('login', PAGE === 'admin' ? 'admin' : 'employee', $('loginEmail').value, $('loginSecret').value);
+      token = r.token; store.set(token); $('loginSecret').value = '';
+      await startApp();
+    } catch (err) { $('loginErr').textContent = err.message; }
+    $('loginBtn').disabled = false;
+  });
+}
+async function signOut(silent){
+  if (token && !silent) { try { await call('logout', token); } catch(e){} }
+  token = null; data = null; store.set(null);
+  $('appView').classList.add('hidden'); $('loginView').classList.remove('hidden');
+  if (silent) $('loginErr').textContent = 'Your session expired. Please sign in again.';
+}
+async function startApp(){
+  $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden');
+  $('adminTabs').classList.toggle('hidden', PAGE !== 'admin');
+  await reload();
+}
+async function reload(){
+  try {
+    data = await call(PAGE === 'admin' ? 'adminData' : 'empData', token);
+    render();
+  } catch (err) { toast(err.message, true); }
+}
+
+// ---------- render ----------
+function render(){
+  if (PAGE === 'admin') {
+    $('appTitle').textContent = (data.brand ? data.brand + ' ' : '') + 'Admin dashboard';
+    $('appSub').textContent = data.stats.pending + ' waiting for approval · ' + data.stats.overdue + ' overdue';
+    const pc = $('pendingCount'); pc.textContent = data.stats.pending; pc.classList.toggle('hidden', !data.stats.pending);
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === currentTab));
+    ({overview:renderOverview, tasks:renderTasks, approvals:renderApprovals, newtask:renderNewTask, team:renderTeam})[currentTab]();
+  } else {
+    renderEmployee();
+  }
+}
+
+function renderOverview(){
+  const s = data.stats;
+  const rows = data.perEmployee.map(e => `<tr class="click" data-emp="${esc(e.name)}">
+    <td class="t-title">${esc(e.name)}</td><td class="num">${e.notStarted}</td><td class="num">${e.inProgress}</td>
+    <td class="num">${e.blocked ? `<span class="pill p-bad">${e.blocked}</span>` : 0}</td>
+    <td class="num">${e.overdue ? `<span class="overdue">${e.overdue}</span>` : 0}</td>
+    <td class="num">${e.done}</td><td class="num">${e.pending}</td></tr>`).join('');
+  const attention = data.tasks.filter(t => t.overdue || (t.approval==='Approved' && t.status==='Blocked'));
+  $('main').innerHTML = `
+    <div class="stats">
+      <div class="stat warn"><div class="n">${s.pending}</div><div class="l">Waiting for approval</div></div>
+      <div class="stat"><div class="n">${s.open}</div><div class="l">Open tasks</div></div>
+      <div class="stat bad"><div class="n">${s.overdue}</div><div class="l">Overdue</div></div>
+      <div class="stat bad"><div class="n">${s.blocked}</div><div class="l">Blocked</div></div>
+      <div class="stat ok"><div class="n">${s.doneToday}</div><div class="l">Done in last 24h</div></div>
+    </div>
+    <div class="card"><h3>By employee</h3><div class="table-wrap"><table>
+      <tr><th>Employee</th><th>Not started</th><th>In progress</th><th>Blocked</th><th>Overdue</th><th>Done</th><th>Pending approval</th></tr>
+      ${rows || '<tr><td colspan="7" class="empty">No active employees yet. Add them in the Team tab.</td></tr>'}
+    </table></div></div>
+    <div class="card"><h3>Needs attention</h3>${taskTable(attention, 'Nothing overdue or blocked.')}</div>`;
+  document.querySelectorAll('tr[data-emp]').forEach(tr => tr.onclick = () => { filters.emp = tr.dataset.emp; currentTab = 'tasks'; render(); });
+  bindTaskRows();
+}
+
+function taskTable(list, emptyMsg){
+  if (!list.length) return `<div class="empty">${esc(emptyMsg)}</div>`;
+  return `<div class="table-wrap"><table>
+    <tr><th>ID</th><th>Task</th><th>Employee</th><th>Due</th><th>Priority</th><th>Approval</th><th>Status</th><th class="hide-sm">Remarks</th></tr>
+    ${list.map(t => `<tr class="click" data-id="${esc(t.id)}">
+      <td class="muted">${esc(t.id)}</td>
+      <td><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub">${esc(t.details)}</div>` : ''}</td>
+      <td>${esc(t.assignee)}</td>
+      <td class="${t.overdue ? 'overdue' : ''}">${esc(t.dueLabel || '-')}</td>
+      <td>${prioPill(t.priority)}</td>
+      <td>${approvalPill(t.approval)}</td>
+      <td>${statusPill(t.status)}${t.approval==='Approved' ? bar(t.progress) : ''}</td>
+      <td class="hide-sm"><div class="t-sub">${esc(t.remarks)}</div></td>
+    </tr>`).join('')}
+  </table></div>`;
+}
+function bindTaskRows(){ document.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => openTask(tr.dataset.id)); }
+
+function renderTasks(){
+  const emps = [...new Set(data.team.filter(m => m.role==='Employee').map(m => m.name))];
+  const q = filters.q.toLowerCase();
+  const list = data.tasks.filter(t =>
+    (!filters.emp || t.assignee === filters.emp) &&
+    (!filters.approval || t.approval === filters.approval) &&
+    (!filters.status || (filters.status === 'Overdue' ? t.overdue : t.status === filters.status)) &&
+    (!q || (t.task + ' ' + t.details + ' ' + t.id + ' ' + t.remarks).toLowerCase().includes(q))
+  ).reverse();
+  $('main').innerHTML = `<div class="card">
+    <div class="row" style="margin-bottom:12px">
+      <div class="field"><label>Search</label><input type="text" id="fq" value="${esc(filters.q)}" placeholder="Task, ID or remark"></div>
+      <div class="field"><label>Employee</label><select id="femp">${options(emps, filters.emp, 'All employees')}</select></div>
+      <div class="field"><label>Approval</label><select id="fapp">${options(APPROVALS, filters.approval, 'Any')}</select></div>
+      <div class="field"><label>Status</label><select id="fst">${options(STATUSES.concat(['Overdue']), filters.status, 'Any')}</select></div>
+    </div>
+    <div class="muted" style="margin-bottom:8px">${list.length} task(s). Click a task to edit it.</div>
+    ${taskTable(list, 'No tasks match these filters.')}
+  </div>`;
+  $('fq').oninput = e => { filters.q = e.target.value; clearTimeout(renderTasks._t); renderTasks._t = setTimeout(() => { renderTasks(); const el=$('fq'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 250); };
+  $('femp').onchange = e => { filters.emp = e.target.value; renderTasks(); };
+  $('fapp').onchange = e => { filters.approval = e.target.value; renderTasks(); };
+  $('fst').onchange = e => { filters.status = e.target.value; renderTasks(); };
+  bindTaskRows();
+}
+
+function renderApprovals(){
+  const list = data.tasks.filter(t => t.approval === 'Pending' || t.approval === 'On Hold');
+  $('main').innerHTML = `<div class="card"><h3>Waiting for approval</h3>${
+    !list.length ? '<div class="empty">Nothing waiting for approval.</div>' :
+    `<div class="table-wrap"><table>
+      <tr><th>ID</th><th>Task</th><th>Employee</th><th>Due</th><th>Priority</th><th>Approval</th><th></th></tr>
+      ${list.map(t => `<tr>
+        <td class="muted">${esc(t.id)}</td>
+        <td><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub">${esc(t.details)}</div>` : ''}</td>
+        <td>${esc(t.assignee)}</td><td>${esc(t.dueLabel || '-')}</td><td>${prioPill(t.priority)}</td><td>${approvalPill(t.approval)}</td>
+        <td style="white-space:nowrap">
+          <button class="btn ok small" data-act="Approved" data-id="${esc(t.id)}">Approve</button>
+          <button class="btn ghost small" data-act="On Hold" data-id="${esc(t.id)}">Hold</button>
+          <button class="btn bad small" data-act="Rejected" data-id="${esc(t.id)}">Reject</button>
+        </td></tr>`).join('')}
+    </table></div>`}</div>`;
+  document.querySelectorAll('button[data-act]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { data = await call('adminUpdateTask', token, b.dataset.id, { approval: b.dataset.act }); toast(b.dataset.id + ': ' + b.dataset.act); render(); }
+    catch (err) { toast(err.message, true); b.disabled = false; }
+  });
+}
+
+function activeEmployees(){ return data.team.filter(m => m.role === 'Employee' && m.active).map(m => m.name); }
+
+function renderNewTask(){
+  const emps = activeEmployees();
+  $('main').innerHTML = `<div class="card" style="max-width:720px"><h3>Assign a new task</h3>
+    ${!emps.length ? '<div class="empty">Add an employee in the Team tab first.</div>' : `
+    <form id="ntForm">
+      <div class="field"><label>Task</label><input type="text" id="ntTask" maxlength="200" required placeholder="What needs to be done"></div>
+      <div class="field"><label>Details</label><textarea id="ntDetails" placeholder="Instructions, links, expected result"></textarea></div>
+      <div class="row">
+        <div class="field"><label>Employee</label><select id="ntEmp" required>${options(emps, '', 'Select employee')}</select></div>
+        <div class="field"><label>Priority</label><select id="ntPrio">${options(PRIORITIES, 'Medium')}</select></div>
+        <div class="field"><label>Due date</label><input type="date" id="ntDue" min="${esc(data.today)}"></div>
+      </div>
+      <div class="field"><label class="switch"><input type="checkbox" id="ntApprove" checked> Approve now (sends it to the employee straight away)</label></div>
+      <button class="btn" type="submit" id="ntBtn">Create task</button>
+    </form>`}</div>`;
+  const f = $('ntForm'); if (!f) return;
+  f.onsubmit = async e => {
+    e.preventDefault();
+    if (!$('ntEmp').value) { toast('Pick an employee.', true); return; }
+    $('ntBtn').disabled = true;
+    try {
+      data = await call('adminAddTask', token, { task:$('ntTask').value, details:$('ntDetails').value, assignee:$('ntEmp').value,
+        priority:$('ntPrio').value, due:$('ntDue').value, approveNow:$('ntApprove').checked });
+      toast('Task created for ' + $('ntEmp').value);
+      renderNewTask(); $('pendingCount').textContent = data.stats.pending;
+    } catch (err) { toast(err.message, true); $('ntBtn').disabled = false; }
+  };
+}
+
+function renderTeam(){
+  const rows = data.team.map(m => `<tr>
+    <td class="t-title">${esc(m.name)}</td><td>${esc(m.email)}</td><td>${esc(m.role)}</td>
+    <td>${m.active ? '<span class="pill p-ok">Active</span>' : '<span class="pill p-grey">Inactive</span>'}</td>
+    <td>${m.role === 'Employee' ? (m.hasPin ? 'Set' : '<span class="muted">Not set</span>') : '-'}</td>
+    <td style="white-space:nowrap">
+      ${m.role === 'Employee' ? `<button class="btn ghost small" data-pin="${esc(m.name)}">${m.hasPin ? 'Reset PIN' : 'Create PIN'}</button>` : ''}
+      <button class="btn ghost small" data-toggle="${esc(m.name)}" data-on="${m.active ? '0' : '1'}">${m.active ? 'Deactivate' : 'Activate'}</button>
+    </td></tr>`).join('');
+  $('main').innerHTML = `
+    <div class="card" style="max-width:820px"><h3>Add a team member</h3>
+      <form id="teForm"><div class="row">
+        <div class="field"><label>Full name</label><input type="text" id="teName" maxlength="60" required></div>
+        <div class="field"><label>Email</label><input type="email" id="teEmail" required></div>
+        <div class="field" style="max-width:150px"><label>Role</label><select id="teRole">${options(['Employee','Admin'],'Employee')}</select></div>
+        <div class="field" style="flex:0"><button class="btn" type="submit" id="teBtn">Add</button></div>
+      </div>
+      <div class="muted">Employees get their own tab in the Employees sheet, edit access to it, and a login PIN for this dashboard.</div></form>
+    </div>
+    <div class="card"><h3>Team</h3><div class="table-wrap"><table>
+      <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Dashboard PIN</th><th></th></tr>
+      ${rows || '<tr><td colspan="6" class="empty">No team members yet.</td></tr>'}
+    </table></div></div>`;
+  $('teForm').onsubmit = async e => {
+    e.preventDefault(); $('teBtn').disabled = true;
+    try {
+      data = await call('adminAddEmployee', token, { name:$('teName').value, email:$('teEmail').value, role:$('teRole').value });
+      renderTeam(); toast('Team member added');
+      if (data.newPin) showPin(data.newPin);
+    } catch (err) { toast(err.message, true); $('teBtn').disabled = false; }
+  };
+  document.querySelectorAll('button[data-pin]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { data = await call('adminResetPin', token, b.dataset.pin); renderTeam(); showPin(data.newPin); }
+    catch (err) { toast(err.message, true); b.disabled = false; }
+  });
+  document.querySelectorAll('button[data-toggle]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { data = await call('adminSetEmployeeActive', token, b.dataset.toggle, b.dataset.on === '1'); renderTeam(); }
+    catch (err) { toast(err.message, true); b.disabled = false; }
+  });
+}
+
+function showPin(p){
+  const msg = `Your task dashboard login\nEmail: ${p.email}\nPIN: ${p.pin}`;
+  modal(`<h3>Login PIN for ${esc(p.name)}</h3>
+    <p class="muted">Share this with ${esc(p.name)}. It is shown only once; you can reset it later from the Team tab.</p>
+    <div class="pin">${esc(p.pin)}</div>
+    <div class="muted" style="margin-bottom:12px">Email: ${esc(p.email)}</div>
+    <div class="actions"><button class="btn ghost" id="cpPin">Copy login details</button><button class="btn" id="okPin">Done</button></div>`);
+  $('okPin').onclick = closeModal;
+  $('cpPin').onclick = () => { navigator.clipboard.writeText(msg).then(() => toast('Copied'), () => toast('Copy failed, select the PIN manually', true)); };
+}
+
+function openTask(id){
+  const t = data.tasks.find(x => x.id === id); if (!t) return;
+  const emps = data.team.filter(m => m.role === 'Employee').map(m => m.name);
+  modal(`<h3>${esc(t.id)} · Edit task</h3>
+    <div class="field"><label>Task</label><input type="text" id="etTask" value="${esc(t.task)}"></div>
+    <div class="field"><label>Details</label><textarea id="etDetails">${esc(t.details)}</textarea></div>
+    <div class="row">
+      <div class="field"><label>Employee</label><select id="etEmp">${options(emps, t.assignee)}</select></div>
+      <div class="field"><label>Priority</label><select id="etPrio">${options(PRIORITIES, t.priority)}</select></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Due date</label><input type="date" id="etDue" value="${esc(t.due)}"></div>
+      <div class="field"><label>Approval</label><select id="etApp">${options(APPROVALS, t.approval)}</select></div>
+    </div>
+    <div class="card" style="background:var(--bg);box-shadow:none;padding:12px">
+      <div><b>Employee status:</b> ${statusPill(t.status)} ${t.approval==='Approved' ? Math.round(t.progress*100)+'%' : ''}</div>
+      ${t.remarks ? `<div style="margin-top:6px"><b>Remarks:</b> ${esc(t.remarks)}</div>` : ''}
+      <div class="muted" style="margin-top:6px;font-size:12px">Created ${esc(t.created||'-')}${t.approvedOn ? ' · Approved '+esc(t.approvedOn) : ''}${t.updated ? ' · Updated '+esc(t.updated) : ''}${t.completed ? ' · Completed '+esc(t.completed) : ''}</div>
+    </div>
+    <div class="actions"><button class="btn ghost" id="etCancel">Cancel</button><button class="btn" id="etSave">Save changes</button></div>`);
+  $('etCancel').onclick = closeModal;
+  $('etSave').onclick = async () => {
+    $('etSave').disabled = true;
+    try {
+      data = await call('adminUpdateTask', token, id, { task:$('etTask').value, details:$('etDetails').value, assignee:$('etEmp').value,
+        priority:$('etPrio').value, due:$('etDue').value, approval:$('etApp').value });
+      closeModal(); render(); toast(id + ' saved');
+    } catch (err) { toast(err.message, true); $('etSave').disabled = false; }
+  };
+}
+
+// ---------- employee view ----------
+function renderEmployee(){
+  $('appTitle').textContent = 'Hi ' + data.name.split(' ')[0];
+  const open = data.tasks.filter(t => t.status !== 'Done');
+  const overdue = data.tasks.filter(t => t.overdue);
+  $('appSub').textContent = open.length + ' open' + (overdue.length ? ' · ' + overdue.length + ' overdue' : '');
+  const order = t => (t.status === 'Done' ? 2 : 0) + (t.overdue ? -1 : 0);
+  const list = data.tasks.slice().sort((a,b) => order(a) - order(b) || (a.due||'9999').localeCompare(b.due||'9999'));
+  $('main').innerHTML = `
+    <div class="stats">
+      <div class="stat"><div class="n">${open.length}</div><div class="l">Open tasks</div></div>
+      <div class="stat bad"><div class="n">${overdue.length}</div><div class="l">Overdue</div></div>
+      <div class="stat ok"><div class="n">${data.tasks.filter(t => t.status==='Done').length}</div><div class="l">Recently done</div></div>
+    </div>
+    ${!list.length ? '<div class="card empty">No tasks assigned to you right now.</div>' :
+    `<div class="tasks-grid">${list.map(t => `
+      <div class="tcard ${t.overdue ? 'is-overdue' : ''} ${t.status==='Done' ? 'is-done' : ''}" data-card="${esc(t.id)}">
+        <div class="t-title">${esc(t.task)}</div>
+        ${t.details ? `<div class="t-sub" style="margin-top:4px">${esc(t.details)}</div>` : ''}
+        <div class="meta"><span>${esc(t.id)}</span>${prioPill(t.priority)}
+          <span class="${t.overdue ? 'overdue' : ''}">${t.dueLabel ? 'Due ' + esc(t.dueLabel) : 'No due date'}${t.overdue ? ' (overdue)' : ''}</span></div>
+        <div class="seg">${STATUSES.map(s => `<button type="button" data-st="${esc(s)}" class="${s===t.status?'on':''}">${esc(s)}</button>`).join('')}</div>
+        <div class="field"><label>Progress: <span data-pv>${Math.round(t.progress*100)}</span>%</label>
+          <input type="range" min="0" max="100" step="10" value="${Math.round(t.progress*100)}" data-pr></div>
+        <div class="field"><label>Remarks</label><textarea data-rm placeholder="What's done, what's blocking you">${esc(t.remarks)}</textarea></div>
+        <button class="btn small" data-save>Save update</button>
+      </div>`).join('')}</div>`}`;
+  document.querySelectorAll('[data-card]').forEach(card => {
+    let status = data.tasks.find(t => t.id === card.dataset.card).status || 'Not Started';
+    const pr = card.querySelector('[data-pr]'), pv = card.querySelector('[data-pv]');
+    card.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
+      status = b.dataset.st;
+      card.querySelectorAll('[data-st]').forEach(x => x.classList.toggle('on', x === b));
+      if (status === 'Done') { pr.value = 100; pv.textContent = 100; }
+    });
+    pr.oninput = () => pv.textContent = pr.value;
+    card.querySelector('[data-save]').onclick = async e => {
+      const btn = e.target; btn.disabled = true;
+      try {
+        data = await call('empUpdateTask', token, card.dataset.card, status, Number(pr.value)/100, card.querySelector('[data-rm]').value);
+        renderEmployee(); toast('Update saved');
+      } catch (err) { toast(err.message, true); btn.disabled = false; }
+    };
+  });
+}
+
+// ---------- boot ----------
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; if (data) render(); });
+$('logoutBtn').onclick = () => signOut(false);
+$('refreshBtn').onclick = async () => {
+  if (PAGE === 'admin') { try { data = await call('adminSyncNow', token); render(); toast('Synced with the sheets'); } catch (err) { toast(err.message, true); } }
+  else reload();
+};
+setupLogin();
+token = store.get();
+if (token) startApp();
+</script>
+</body>
+</html>
