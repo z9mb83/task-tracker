@@ -808,13 +808,21 @@ async function renderAttendance(){
     <div class="card"><div class="row" style="align-items:flex-end;margin-bottom:10px">
         <h3 style="margin:0;flex:1">Monthly report · ${esc(monthLabel)}</h3>
         <div class="field" style="margin:0;max-width:180px"><label>Month</label><select id="attMonth">${months.map(m => `<option value="${m}" ${m === att.month ? 'selected' : ''}>${esc(new Date(m + '-01T00:00').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }))}</option>`).join('')}</select></div></div>
+      <div class="muted" style="font-size:12.5px;margin:-4px 0 10px">${att.calendar.filter(d => d.type === 'work').length} working days this month${
+        att.calendar.some(d => d.type === 'holiday') ? ' · holidays: ' + esc(att.calendar.filter(d => d.type === 'holiday').map(d => shortDate(d.date) + (d.label ? ' ' + d.label : '')).join(', ')) : ''}.
+        Tap an employee for their calendar.</div>
       <div class="table-wrap"><table class="rt">
-      <tr><th>Employee</th><th>Days</th><th>Total hours</th><th>Avg / day</th><th>Late</th><th>Left early</th><th>Auto check-out</th></tr>
-      ${att.summary.map(r => `<tr><td class="primary t-title">${esc(r.name)}</td><td class="num" data-label="Days">${r.days}</td>
-        <td class="num" data-label="Total">${esc(fmtMins(r.totalMin))}</td><td class="num" data-label="Avg / day">${esc(fmtMins(r.avgMin))}</td>
+      <tr><th>Employee</th><th>Working days</th><th>Present</th><th>Leaves</th><th>Attendance</th><th>Late</th><th>Left early</th><th>Total hours</th><th>Avg / day</th></tr>
+      ${att.summary.map(r => `<tr class="click" data-empcal="${esc(r.name)}"><td class="primary t-title">${esc(r.name)}</td>
+        <td class="num" data-label="Working days">${r.workingDays}</td>
+        <td class="num" data-label="Present">${r.present}${r.extraDays ? ` <span class="muted">+${r.extraDays}</span>` : ''}</td>
+        <td class="num" data-label="Leaves">${r.leaves ? `<span class="pill p-bad">${r.leaves}</span>` : 0}</td>
+        <td class="num" data-label="Attendance">${r.pct == null ? '-' : r.pct + '%'}</td>
         <td class="num" data-label="Late">${r.late ? `<span class="pill p-warn">${r.late}</span>` : 0}</td>
-        <td class="num" data-label="Left early">${r.early}</td><td class="num" data-label="Auto out">${r.auto}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No attendance this month.</td></tr>'}
+        <td class="num" data-label="Left early">${r.early}</td>
+        <td class="num" data-label="Total">${esc(fmtMins(r.totalMin))}</td><td class="num" data-label="Avg / day">${esc(fmtMins(r.avgMin))}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">No attendance this month.</td></tr>'}
     </table></div>
+    <div class="actions" style="justify-content:flex-start;margin-top:10px"><button class="btn ghost small" id="attCsv">⬇ Download month (CSV)</button></div>
     <details style="margin-top:12px"><summary class="muted" style="cursor:pointer">Day by day (${att.monthRows.length})</summary>
       <div class="table-wrap"><table class="rt">
       <tr><th>Date</th><th>Employee</th><th>In</th><th>Out</th><th>Worked</th><th>Photos</th><th>Notes</th></tr>
@@ -824,9 +832,11 @@ async function renderAttendance(){
         <td data-label="Photos">${r.photosDeleted ? '<span class="muted">Deleted</span>' : photoBtn(r.inPhoto, 'In') + ' ' + photoBtn(r.outPhoto, 'Out')}</td>
         <td class="full">${notes(r)}</td></tr>`).join('')}
       </table></div></details>
-    <div class="muted" style="font-size:12px;margin-top:10px">Office ${esc(o.hours)} · late after ${esc(o.lateAfter)} · auto check-out ${esc(o.autoOut)} · photos are deleted on the 15th of the next month.</div></div>`;
+    <div class="muted" style="font-size:12px;margin-top:10px">Working days count up to today; holidays and the weekly off are set in the Settings tab. "+1" = came on a day off. Office ${esc(o.hours)} · late after ${esc(o.lateAfter)} · auto check-out ${esc(o.autoOut)} · photos are deleted on the 15th of the next month.</div></div>`;
   $('attMonth').onchange = async e => { attMonth = e.target.value; att._stale = true; renderAttendance(); };
   document.querySelectorAll('[data-photo]').forEach(b => b.onclick = () => showPhoto(b.dataset.photo, b.closest('tr').querySelector('.t-title').firstChild.textContent.trim()));
+  document.querySelectorAll('[data-empcal]').forEach(tr => tr.onclick = () => showEmpMonth(tr.dataset.empcal));
+  $('attCsv').onclick = downloadAttCsv;
   loadThumbs();
   if ($('setOffice')) $('setOffice').onclick = async () => {
     const loc = await getLocation();
@@ -835,6 +845,50 @@ async function renderAttendance(){
     try { att = await call('adminSetOffice', token, loc.lat, loc.lng, loc.acc); toast('Office location saved'); renderAttendance(); }
     catch (err) { toast(err.message, true); }
   };
+}
+function shortDate(d){ return new Date(d + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
+/** One employee's month as a calendar. */
+function showEmpMonth(name){
+  const s = att.summary.find(x => x.name === name); if (!s) return;
+  const recs = {}; att.monthRows.filter(r => r.name === name).forEach(r => { recs[r.date] = r; });
+  const leave = new Set(s.leaveDates);
+  const first = att.calendar[0].dow, lead = (first + 6) % 7;   // weeks start Monday
+  const cells = Array(lead).fill('<div class="cal-d empty"></div>').concat(att.calendar.map(d => {
+    const r = recs[d.date], n = Number(d.date.slice(8));
+    let cls = 'future', body = '';
+    if (r) { cls = r.late ? 'late' : 'present'; body = `<div class="cal-t">${esc(r.inLabel.replace(' ', ''))}–${esc((r.outLabel || '…').replace(' ', ''))}</div><div class="cal-h">${esc(fmtMins(r.workedMin))}</div>`;
+             if (d.type !== 'work') cls += ' extra'; }
+    else if (d.type === 'holiday') { cls = 'off'; body = `<div class="cal-t">${esc(d.label || 'Holiday')}</div>`; }
+    else if (d.type === 'off') { cls = 'off'; body = '<div class="cal-t">Off</div>'; }
+    else if (leave.has(d.date)) { cls = 'leave'; body = '<div class="cal-t">Leave</div>'; }
+    const tags = r ? [r.late ? 'Late' : '', /Left early/.test(r.flags) ? 'Early' : '', /Auto check-out/.test(r.flags) ? 'Auto out' : ''].filter(Boolean) : [];
+    return `<div class="cal-d ${cls}" title="${esc(d.date)}"><div class="cal-n">${n}</div>${body}${tags.length ? `<div class="cal-tag">${esc(tags.join(' · '))}</div>` : ''}</div>`;
+  }));
+  const monthLabel = new Date(att.month + '-01T00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  modal(`<h3>${esc(name)} · ${esc(monthLabel)}</h3>
+    <div class="cal-stats">
+      <div><b>${s.workingDays}</b><span>Working days</span></div><div><b>${s.present}</b><span>Present</span></div>
+      <div class="bad"><b>${s.leaves}</b><span>Leaves</span></div><div><b>${s.pct == null ? '-' : s.pct + '%'}</b><span>Attendance</span></div>
+      <div class="warn"><b>${s.late}</b><span>Late</span></div><div><b>${s.early}</b><span>Left early</span></div>
+      <div><b>${esc(fmtMins(s.totalMin))}</b><span>Total hours</span></div><div><b>${esc(fmtMins(s.avgMin))}</b><span>Avg / day</span></div>
+    </div>
+    <div class="cal">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => `<div class="cal-w">${d}</div>`).join('')}${cells.join('')}</div>
+    <div class="cal-key"><span class="k present"></span>Present <span class="k late"></span>Late <span class="k leave"></span>Leave <span class="k off"></span>Off / holiday</div>
+    ${s.leaveDates.length ? `<div class="muted" style="font-size:12.5px;margin-top:8px">Leaves: ${esc(s.leaveDates.map(shortDate).join(', '))}</div>` : ''}
+    <div class="actions" style="justify-content:flex-end"><button class="btn ghost" type="button" onclick="closeModal()">Close</button></div>`);
+  document.querySelector('.modal').classList.add('wide');
+}
+function downloadAttCsv(){
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const lines = [['Employee','Working days','Present','Leaves','Attendance %','Late','Left early','Auto check-out','Extra days','Total hours','Avg per day','Leave dates'].map(q).join(',')];
+  att.summary.forEach(s => lines.push([s.name, s.workingDays, s.present, s.leaves, s.pct == null ? '' : s.pct, s.late, s.early, s.auto, s.extraDays,
+    (s.totalMin / 60).toFixed(2), (s.avgMin / 60).toFixed(2), s.leaveDates.join(' ')].map(q).join(',')));
+  lines.push('');
+  lines.push(['Date','Employee','Check in','Check out','Worked (h)','Late','Notes'].map(q).join(','));
+  att.monthRows.slice().reverse().forEach(r => lines.push([r.date, r.name, r.inLabel, r.outLabel, (r.workedMin / 60).toFixed(2), r.late ? 'Yes' : '', r.flags].map(q).join(',')));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv' }));
+  a.download = 'attendance-' + att.month + '.csv'; document.body.appendChild(a); a.click(); a.remove();
 }
 /** Fetches a photo without the full-screen busy overlay (used for thumbnails). */
 async function fetchPhoto(id){

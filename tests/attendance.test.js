@@ -156,3 +156,30 @@ ok(sheets.Settings.data.find(r => r[0] === 'Office latitude')[1] === 30.70123 &&
    sheets.Settings.data.find(r => r[0] === 'Office location confirmed')[1] === 'Yes', 'admin saves office location');
 
 console.log(pass + ' attendance checks passed');
+
+// ---- Monthly report: working days, leaves, holidays ----
+(() => {
+  const set = (k, v) => { const r = sheets.Settings.data.find(x => x[0] === k); if (r) r[1] = v; else sheets.Settings.data.push([k, v]); };
+  set('Weekly off', 'Sunday'); set('Holidays', '2026-11-04: Diwali, 2026-11-05');
+  sheets.Attendance.data.length = 1;   // fresh month
+  sheets.Settings.data.find(r => r[0] === 'Location check')[1] = 'Block';
+  set('Office latitude', OFFICE[0]); set('Office longitude', OFFICE[1]);
+  const day = (d, inT, outT) => { NOW = ist(d + 'T' + inT); x.empCheck('Aryan', 'in', PHOTO, ...near, 10); if (outT) { NOW = ist(d + 'T' + outT); x.empCheck('Aryan', 'out', PHOTO, ...near, 10); } };
+  day('2026-11-02', '09:55', '18:05');                 // Mon present
+  day('2026-11-03', '10:40', '18:00');                 // Tue late
+  // Wed 4, Thu 5 holidays; Fri 6 leave
+  day('2026-11-07', '09:58', '18:10');                 // Sat present
+  day('2026-11-08', '11:00', '15:00');                 // Sun (weekly off) came anyway
+  NOW = ist('2026-11-09T19:00');                        // Mon 9 Nov, after hours, no check-in -> leave
+  const r = x.adminAttendance('admin', '2026-11');
+  const a = r.summary.find(s => s.name === 'Aryan');
+  ok(r.calendar.length === 30 && r.calendar.filter(d => d.type === 'holiday').length === 2 && r.calendar.find(d => d.date === '2026-11-04').label === 'Diwali',
+     'November calendar: 30 days, 2 holidays (Diwali label)');
+  ok(a.workingDays === 5 && a.present === 3 && a.leaves === 2 && a.leaveDates.join() === '2026-11-06,2026-11-09',
+     'Aryan: 5 working days so far, 3 present, leaves on 6 and 9 Nov (holidays and Sundays not counted)');
+  ok(a.extraDays === 1 && a.late === 1 && a.pct === 60, 'Sunday visit counted as extra day, not late; 1 late, 60% attendance');
+  ok(a.monthWorkingDays === 23, 'November has 23 working days (30 - 5 Sundays - 2 holidays)');
+  const n = r.summary.find(s => s.name === 'Neha');
+  ok(n.workingDays === 0 && n.leaves === 0, 'no leaves counted before an employee first checks in');
+  console.log(pass + ' attendance checks passed (with monthly report)');
+})();

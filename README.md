@@ -133,6 +133,7 @@ If you change the env vars later, redeploy from the Vercel dashboard so they tak
 | Office latitude / longitude | Set from Dashboard > Attendance > Use my current location (stand in the office) |
 | Office radius (m) | How close a check-in must be (default 150) |
 | Location check | Block (default) or Flag only |
+| Weekly off, Holidays | Used for working days and leaves in the monthly report (default weekly off: Sunday) |
 | Office start / end, Buffer (min) | 10:00 / 18:00 / 20: late after 10:20, left early before 5:40, auto check-out 6:20 PM |
 
 ## Notes
@@ -161,3 +162,6 @@ POST-then-redirect behaviour), and check the due-time and time-taken calculation
   (October photos on 15 November); the Attendance tab keeps the times and marks the photos "Deleted".
 - Late = check-in after 10:20. Left early = check-out before 5:40. Anyone not checked out by 6:20 PM is
   auto checked out at 6:20 PM (flagged). Check-in is closed after 6:20 PM.
+- Monthly report (Dashboard > Attendance): working days so far, present, leaves, attendance %, late, left early,
+  hours, plus a calendar per employee and a CSV download. A working day with no check-in counts as a leave;
+  days before an employee's first check-in are not counted.

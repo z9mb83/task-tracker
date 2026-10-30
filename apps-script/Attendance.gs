@@ -28,8 +28,42 @@ function attSettings_() {
     block: String(s['Location check'] || 'Block').toLowerCase() !== 'flag only',
     start: hm(s['Office start'], 600), end: hm(s['Office end'], 1080),
     buffer: Number(s['Buffer (min)']) || 20,
-    confirmed: String(s['Office location confirmed'] || '').toLowerCase() === 'yes'
+    confirmed: String(s['Office location confirmed'] || '').toLowerCase() === 'yes',
+    weeklyOff: parseWeeklyOff_(s['Weekly off'] === undefined ? 'Sunday' : s['Weekly off']),
+    holidays: parseHolidays_(s['Holidays'])
   };
+}
+
+const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+/** 'Sunday' / 'Sat, Sun' -> [0] / [6, 0] */
+function parseWeeklyOff_(v) {
+  return String(v || '').toLowerCase().split(/[,;/&]+|\band\b/).map(x => DAY_NAMES.indexOf(x.trim().slice(0, 3))).filter(i => i >= 0);
+}
+/** '2026-11-01, 25-12-2026: Christmas' -> { '2026-11-01': '', '2026-12-25': 'Christmas' } */
+function parseHolidays_(v) {
+  const out = {};
+  String(v || '').split(/[,;\n]+/).forEach(part => {
+    const m = part.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})|^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+    if (!m) return;
+    const key = m[1] ? m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0')
+                     : m[6] + '-' + m[5].padStart(2, '0') + '-' + m[4].padStart(2, '0');
+    const i = part.indexOf(':');
+    out[key] = i >= 0 ? part.slice(i + 1).trim() : '';
+  });
+  return out;
+}
+/** Every day of a month as { date, dow, type: work | off | holiday, label } */
+function monthDays_(month, cfg) {
+  const y = Number(month.slice(0, 4)), mo = Number(month.slice(5, 7));
+  const n = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const out = [];
+  for (let d = 1; d <= n; d++) {
+    const date = month + '-' + String(d).padStart(2, '0');
+    const dow = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
+    const type = date in cfg.holidays ? 'holiday' : cfg.weeklyOff.includes(dow) ? 'off' : 'work';
+    out.push({ date: date, dow: dow, type: type, label: type === 'holiday' ? (cfg.holidays[date] || 'Holiday') : '' });
+  }
+  return out;
 }
 
 /** Minutes since midnight (IST) -> Date on the given day. */
@@ -126,6 +160,7 @@ function empCheck(token, kind, photo, lat, lng, acc) {
     const cfg = attSettings_();
     const now = new Date();
     const day = dayKey_(now);
+    const workDay = monthDays_(day.slice(0, 7), cfg).find(d => d.date === day).type === 'work';   // no late / early flags on holidays
     const loc = checkLocation_(cfg, lat, lng, acc);
     if (loc.dist === null && !isNaN(cfg.lat) && cfg.block) {
       throw new Error('Location is needed to check ' + kind + '. Allow location for this site and try again.');
@@ -141,7 +176,7 @@ function empCheck(token, kind, photo, lat, lng, acc) {
       if (rec && rec.v[A.IN - 1] instanceof Date) throw new Error('You already checked in today at ' + clock_(rec.v[A.IN - 1]) + '.');
       if (minutesOfDay_(now) >= cfg.end + cfg.buffer) throw new Error('Office hours are over for today.');
       const url = savePhoto_(sess.name, 'in', photo, now);
-      const late = minutesOfDay_(now) > cfg.start + cfg.buffer;
+      const late = workDay && minutesOfDay_(now) > cfg.start + cfg.buffer;
       sh.appendRow([day, sess.name, now, '', '', '', late ? 'Yes' : 'No', flagOutside, url, '', loc.dist === null ? '' : loc.dist, '']);
       sh.getRange(sh.getLastRow(), A.DATE).setNumberFormat('@').setValue(day);
     } else {
@@ -149,7 +184,7 @@ function empCheck(token, kind, photo, lat, lng, acc) {
       if (rec.v[A.OUT - 1] instanceof Date) throw new Error('You already checked out at ' + clock_(rec.v[A.OUT - 1]) + '.');
       const url = savePhoto_(sess.name, 'out', photo, now);
       const worked = Math.round((now - rec.v[A.IN - 1]) / 60000);
-      const flags = [rec.v[A.FLAGS - 1], flagOutside, minutesOfDay_(now) < cfg.end - cfg.buffer ? 'Left early' : '']
+      const flags = [rec.v[A.FLAGS - 1], flagOutside, workDay && minutesOfDay_(now) < cfg.end - cfg.buffer ? 'Left early' : '']
         .filter(String).join('; ');
       sh.getRange(rec.row, A.OUT, 1, 5).setValues([[now, worked, hoursLabel_(worked), rec.v[A.LATE - 1], flags]]);
       sh.getRange(rec.row, A.OUT_PHOTO).setValue(url);
@@ -215,16 +250,31 @@ function adminAttendance(token, month) {
   const monthRows = rows.filter(r => String(r[A.DATE - 1]).slice(0, 7) === month).map(rec)
     .sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
   const names = [...new Set(employees.concat(monthRows.map(r => r.name)))];
+  // Working days count up to today (today only once check-in has closed or they came in).
+  // Days before an employee's first-ever check-in are not counted as leave (they had not joined yet).
+  const days = monthDays_(month, cfg);
+  const closedToday = minutesOfDay_(now) >= cfg.end + cfg.buffer;
+  const firstSeen = {};
+  rows.forEach(r => { const n = r[A.NAME - 1], d = String(r[A.DATE - 1]); if (!firstSeen[n] || d < firstSeen[n]) firstSeen[n] = d; });
   const summary = names.map(n => {
     const mine = monthRows.filter(r => r.name === n);
     const total = mine.reduce((t, r) => t + (r.workedMin || 0), 0);
-    return { name: n, days: mine.length, late: mine.filter(r => r.late).length,
+    const came = {}; mine.forEach(r => { came[r.date] = true; });
+    const counted = days.filter(d => d.type === 'work' && (d.date < today || (d.date === today && (closedToday || came[d.date]))) &&
+                                     firstSeen[n] && d.date >= firstSeen[n]);
+    const present = counted.filter(d => came[d.date]).length;
+    const leaves = counted.filter(d => !came[d.date]).map(d => d.date);
+    const extra = mine.filter(r => days.some(d => d.date === r.date && d.type !== 'work')).length;   // came on a holiday / weekly off
+    return { name: n, workingDays: counted.length, present: present, leaves: leaves.length, leaveDates: leaves, extraDays: extra,
+             pct: counted.length ? Math.round(present / counted.length * 100) : null,
+             monthWorkingDays: days.filter(d => d.type === 'work').length,
+             days: mine.length, late: mine.filter(r => r.late).length,
              totalMin: total, avgMin: mine.length ? Math.round(total / mine.length) : 0,
              auto: mine.filter(r => /Auto check-out/.test(r.flags)).length,
              early: mine.filter(r => /Left early/.test(r.flags)).length };
   });
   return {
-    today: today, month: month, todayRows: todayRows, monthRows: monthRows, summary: summary,
+    today: today, month: month, todayRows: todayRows, monthRows: monthRows, summary: summary, calendar: days,
     office: { lat: isNaN(cfg.lat) ? null : cfg.lat, lng: isNaN(cfg.lng) ? null : cfg.lng, radius: cfg.radius,
               confirmed: cfg.confirmed, block: cfg.block,
               hours: clock_(atMinutes_(today, cfg.start)) + ' - ' + clock_(atMinutes_(today, cfg.end)),
@@ -323,7 +373,9 @@ function ensureAttendanceSettings_() {
    ['Location check', 'Block', 'Block = refuse check-ins away from the office; Flag only = allow but flag'],
    ['Office start', '10:00', 'Late after start + buffer'],
    ['Office end', '18:00', 'Auto check-out at end + buffer'],
-   ['Buffer (min)', 20, 'Grace minutes for late / left early / auto check-out']]
+   ['Buffer (min)', 20, 'Grace minutes for late / left early / auto check-out'],
+   ['Weekly off', 'Sunday', 'Days off every week, e.g. Sunday or Saturday, Sunday'],
+   ['Holidays', '', 'Office holidays, comma separated: 2026-11-08: Diwali, 2026-12-25: Christmas']]
     .forEach(r => {
       if (have.includes(r[0])) return;
       sh.appendRow(['', '', '']);

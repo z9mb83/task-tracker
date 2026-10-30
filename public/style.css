@@ -268,3 +268,29 @@ html.m .att-btn{width:100%}
 .att-thumb img,.att-thumb .ph{width:88px;height:88px;border-radius:7px;object-fit:cover;display:flex;align-items:center;justify-content:center;background:var(--grey-bg);font-size:20px}
 .att-thumb .cap{font-size:11.5px;color:var(--muted)}
 html.m .att-thumb img,html.m .att-thumb .ph{width:110px;height:110px}
+.modal.wide{max-width:760px;width:calc(100% - 32px)}
+.cal-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:4px 0 14px}
+.cal-stats div{background:var(--grey-bg);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column}
+.cal-stats b{font-size:17px} .cal-stats span{font-size:11.5px;color:var(--muted)}
+.cal-stats .bad b{color:var(--bad)} .cal-stats .warn b{color:var(--warn)}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal-w{font-size:11px;font-weight:600;color:var(--muted);text-align:center;padding:2px 0}
+.cal-d{min-height:64px;border-radius:7px;padding:4px 5px;font-size:11px;border:1px solid var(--line);background:#fff;overflow:hidden}
+.cal-d.empty{border:0;background:none}
+.cal-n{font-weight:700;font-size:12px}
+.cal-t{color:var(--ink);margin-top:2px;line-height:1.25;word-break:break-word}
+.cal-h{color:var(--muted)} .cal-tag{color:var(--warn);font-weight:600;margin-top:1px}
+.cal-d.present{background:var(--ok-bg);border-color:#bfe3cc} .cal-d.late{background:var(--warn-bg);border-color:#f0d9a6}
+.cal-d.leave{background:var(--bad-bg);border-color:#f3c3bd} .cal-d.leave .cal-t{color:var(--bad);font-weight:600}
+.cal-d.off{background:var(--grey-bg);color:var(--muted)} .cal-d.off .cal-t{color:var(--muted)}
+.cal-d.extra{outline:2px dashed var(--info);outline-offset:-2px}
+.cal-d.future{color:#b0b6c3}
+.cal-key{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:12px;color:var(--muted);margin-top:10px}
+.cal-key .k{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:-8px;vertical-align:middle}
+.cal-key .k.present{background:var(--ok-bg);border:1px solid #bfe3cc} .cal-key .k.late{background:var(--warn-bg);border:1px solid #f0d9a6}
+.cal-key .k.leave{background:var(--bad-bg);border:1px solid #f3c3bd} .cal-key .k.off{background:var(--grey-bg);border:1px solid var(--line)}
+html.m .cal-stats{grid-template-columns:repeat(2,1fr)}
+html.m .cal-d{min-height:52px;padding:3px;font-size:9.5px}
+html.m .cal-tag{display:none}
+html.m .cal-d.present .cal-t,html.m .cal-d.late .cal-t{display:none}
+html.m .cal-h{font-size:10px;color:var(--ink);margin-top:2px}
