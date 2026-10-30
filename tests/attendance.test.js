@@ -105,11 +105,13 @@ r = x.empCheck('Neha', 'in', PHOTO, ...near, 10).attendance;
 ok(r.late, 'Neha checks in 10:35 AM and is marked Late');
 ok(/not checked in/.test(throwsMsg(() => x.empCheck('Ravi', 'out', PHOTO, ...near, 10))), 'check-out without check-in is refused');
 
-// 5:30 PM Aryan checks out: left early (before 5:40), worked 7 h 40 min
+// 5:30 PM Aryan checks out (no photo): left early (before 5:40), worked 7 h 40 min
 NOW = ist('2026-10-30T17:30');
-r = x.empCheck('Aryan', 'out', PHOTO, ...near, 10).attendance;
+r = x.empCheck('Aryan', 'out', '', ...near, 10).attendance;
+ok(att()[0][9] === '' && Object.keys(files).length === 2, 'check-out without a photo works and saves no file');
 ok(r.state === 'out' && r.workedMin === 460 && /Left early/.test(r.flags), 'Aryan out 5:30 PM: 460 min, flagged Left early');
-ok(/already checked out/.test(throwsMsg(() => x.empCheck('Aryan', 'out', PHOTO, ...near, 10))), 'second check-out is refused');
+ok(/already checked out/.test(throwsMsg(() => x.empCheck('Aryan', 'out', '', ...near, 10))), 'second check-out is refused');
+ok(/from the office/.test(throwsMsg(() => x.empCheck('Neha', 'out', '', ...far, 10))), 'check-out away from the office is still blocked');
 
 // Neha forgets; at 6:10 PM still open, at 6:45 PM auto check-out records 6:20 PM
 NOW = ist('2026-10-30T18:10');

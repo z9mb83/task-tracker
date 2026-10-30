@@ -686,7 +686,7 @@ function attendanceCard(){
   } else if (a.state === 'in') {
     body = `<div class="att-big">Checked in at ${esc(a.inLabel)}${a.late ? ' <span class="pill p-warn">Late</span>' : ''}</div>
       <div class="muted"><span data-worked="${a.inMs}" data-cap="${esc(a.autoOutLabel)}">${esc(fmtMins(a.workedMin))}</span> so far · auto check-out at ${esc(a.autoOutLabel)}</div>`;
-    btn = `<button class="btn bad att-btn" data-check="out">📷 Check out</button>`;
+    btn = `<button class="btn bad att-btn" data-check="out">Check out</button>`;
   } else {
     body = `<div class="att-big">Worked ${esc(fmtMins(a.workedMin))} today</div>
       <div class="muted">In ${esc(a.inLabel)} · Out ${esc(a.outLabel)}${a.late ? ' · <span class="pill p-warn">Late</span>' : ''}${/Auto check-out/.test(a.flags) ? ' · auto checked out' : ''}</div>`;
@@ -701,7 +701,28 @@ function tickWorked(){
 }
 setInterval(tickWorked, 30000);
 function bindAttendanceCard(){
-  document.querySelectorAll('[data-check]').forEach(b => b.onclick = () => openCamera(b.dataset.check));
+  document.querySelectorAll('[data-check]').forEach(b => b.onclick = () => b.dataset.check === 'in' ? openCamera('in') : openCheckout());
+}
+/** Check-out: no photo, just a confirm and the location check. */
+function openCheckout(){
+  const a = data.attendance;
+  modal(`<h3>Check out now?</h3>
+    <p style="margin:0 0 6px">Checked in at <b>${esc(a.inLabel)}</b> · <b>${esc(fmtMins(Math.max(0, (Date.now() - a.inMs) / 60000)))}</b> so far.</p>
+    <div class="muted" id="coMsg" style="font-size:12.5px;margin:8px 0">Your location is checked when you tap Check out.</div>
+    <div class="actions" style="justify-content:flex-end">
+      <button class="btn ghost" type="button" id="coCancel">Cancel</button>
+      <button class="btn bad" type="button" id="coSend">Check out</button></div>`);
+  $('coCancel').onclick = closeModal;
+  $('coSend').onclick = async () => {
+    $('coSend').disabled = true; $('coMsg').textContent = 'Checking your location…';
+    const loc = await getLocation();
+    if (loc.error && a.needsLocation) { $('coMsg').textContent = loc.error; $('coSend').disabled = false; return; }
+    try {
+      data = await call('empCheck', token, 'out', '', loc.lat, loc.lng, loc.acc);
+      myAttAt = 0; closeModal(); renderEmployee(); tickCountdowns();
+      toast('Checked out. Worked ' + fmtMins(data.attendance.workedMin) + ' today');
+    } catch (err) { $('coMsg').textContent = err.message; $('coSend').disabled = false; }
+  };
 }
 function getLocation(){
   return new Promise(resolve => {
@@ -930,10 +951,11 @@ function showEmpMonth(name, src){
 function showDayPhotos(name, r, back){
   const day = new Date(r.date + 'T00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
   const slot = (id, label, time) => `<div class="day-ph"><div class="cam-box">${id ? `<div class="muted" data-ph="${esc(id)}" style="padding:30px;text-align:center">Loading…</div>`
-      : `<div class="muted" style="padding:30px;text-align:center">${r.photosDeleted ? 'Photo deleted<br><small>(kept until the 15th of next month)</small>' : 'No photo'}</div>`}</div>
+      : `<div class="muted" style="padding:30px;text-align:center">${r.photosDeleted ? 'Photo deleted<br><small>(photos are kept until the 15th of the next month)</small>' : 'No photo'}</div>`}</div>
     <div class="day-cap"><b>${esc(label)}</b> ${esc(time || '-')}</div></div>`;
   modal(`<h3>${esc(name)} · ${esc(day)}</h3>
-    <div class="day-phs">${slot(r.inPhoto, 'Check in', r.inLabel)}${slot(r.outPhoto, 'Check out', r.outLabel)}</div>
+    <div class="day-phs ${r.outPhoto ? '' : 'one'}">${slot(r.inPhoto, 'Check in', r.inLabel)}${r.outPhoto ? slot(r.outPhoto, 'Check out', r.outLabel) : ''}</div>
+    ${r.outPhoto ? '' : `<div style="text-align:center;font-size:13px;margin-top:4px"><b>Check out</b> ${esc(r.outLabel || '-')}</div>`}
     <div class="muted" style="font-size:12.5px;margin-top:10px">Worked ${esc(fmtMins(r.workedMin))}${r.late ? ' · <span class="pill p-warn">Late</span>' : ''}${r.flags ? ' · ' + esc(r.flags) : ''}</div>
     <div class="actions" style="justify-content:space-between"><button class="btn ghost" type="button" id="dayBack">← Back to calendar</button>
       <button class="btn ghost" type="button" onclick="closeModal()">Close</button></div>`);

@@ -182,12 +182,12 @@ function empCheck(token, kind, photo, lat, lng, acc) {
     } else {
       if (!rec || !(rec.v[A.IN - 1] instanceof Date)) throw new Error('You have not checked in today.');
       if (rec.v[A.OUT - 1] instanceof Date) throw new Error('You already checked out at ' + clock_(rec.v[A.OUT - 1]) + '.');
-      const url = savePhoto_(sess.name, 'out', photo, now);
+      const url = photo ? savePhoto_(sess.name, 'out', photo, now) : '';   // check-out photo is optional (not asked for)
       const worked = Math.round((now - rec.v[A.IN - 1]) / 60000);
       const flags = [rec.v[A.FLAGS - 1], flagOutside, workDay && minutesOfDay_(now) < cfg.end - cfg.buffer ? 'Left early' : '']
         .filter(String).join('; ');
       sh.getRange(rec.row, A.OUT, 1, 5).setValues([[now, worked, hoursLabel_(worked), rec.v[A.LATE - 1], flags]]);
-      sh.getRange(rec.row, A.OUT_PHOTO).setValue(url);
+      if (url) sh.getRange(rec.row, A.OUT_PHOTO).setValue(url);
       sh.getRange(rec.row, A.OUT_DIST).setValue(loc.dist === null ? '' : loc.dist);
     }
   } finally {

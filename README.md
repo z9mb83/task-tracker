@@ -155,8 +155,8 @@ POST-then-redirect behaviour), and check the due-time and time-taken calculation
 
 ## Attendance
 
-- Employees check in and out from the top of `/employee`. The phone's camera takes a selfie and the
-  location must be within the office radius. Allow camera and location for the site when asked.
+- Employees check in from the top of `/employee` with a selfie (check-out is one tap, no photo). Both need the
+  phone to be within the office radius. Allow camera and location for the site when asked.
 - Photos are saved in Google Drive: **Task Tracker Attendance / Employee / yyyy-MM** (private to the owner).
   Admins see them in the dashboard. Each month's photos go to Drive's trash on the **15th of the next month**
   (October photos on 15 November); the Attendance tab keeps the times and marks the photos "Deleted".
