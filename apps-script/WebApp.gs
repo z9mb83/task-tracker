@@ -236,6 +236,41 @@ function adminSetEmployeeActive(token, name, active) {
   return adminData(token);
 }
 
+/**
+ * Removes a team member completely: PIN, Team row (name + email), access to the
+ * Employees sheet and their tab there. Their tasks stay in the Admin sheet as history.
+ * Any open session stops working on the next request (requireSession_ re-checks the Team tab).
+ */
+function adminRemoveEmployee(token, name) {
+  requireSession_(token, 'admin');
+  const m = getTeamAll_().find(x => x.name === name);
+  if (!m) throw new Error('Team member not found.');
+
+  syncNow();   // pull their latest updates into the Admin sheet before the tab goes
+
+  const props = PropertiesService.getScriptProperties();
+  if (m.email) props.deleteProperty('PIN_' + m.email.toLowerCase());
+
+  const s = getSettings_();
+  if (m.role === 'Employee') {
+    const empSS = SpreadsheetApp.openById(s['Employee sheet ID']);
+    if (m.email) {
+      try { DriveApp.getFileById(empSS.getId()).removeEditor(m.email); } catch (e) { Logger.log('removeEditor: ' + e); }
+      try { DriveApp.getFileById(empSS.getId()).removeViewer(m.email); } catch (e) { /* was not a viewer */ }
+    }
+    const tab = empSS.getSheetByName(m.name);
+    if (tab && empSS.getSheets().length > 1) empSS.deleteSheet(tab);
+  }
+
+  // Find the row again right before deleting, in case the sheet changed
+  const fresh = getTeamAll_().find(x => x.name === name && x.email === m.email);
+  if (fresh) SpreadsheetApp.getActive().getSheetByName(TEAM_TAB).deleteRow(fresh.row);
+
+  const data = adminData(token);
+  data.removed = m.name;
+  return data;
+}
+
 function adminResetPin(token, name) {
   requireSession_(token, 'admin');
   const m = getTeamAll_().find(x => x.name === name);

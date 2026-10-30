@@ -248,6 +248,7 @@ function renderTeam(){
     <td style="white-space:nowrap">
       ${m.role === 'Employee' ? `<button class="btn ghost small" data-pin="${esc(m.name)}">${m.hasPin ? 'Reset PIN' : 'Create PIN'}</button>` : ''}
       <button class="btn ghost small" data-toggle="${esc(m.name)}" data-on="${m.active ? '0' : '1'}">${m.active ? 'Deactivate' : 'Activate'}</button>
+      <button class="btn bad small" data-remove="${esc(m.name)}">Remove</button>
     </td></tr>`).join('');
   $('main').innerHTML = `
     <div class="card" style="max-width:820px"><h3>Add a team member</h3>
@@ -276,11 +277,35 @@ function renderTeam(){
     try { data = await call('adminResetPin', token, b.dataset.pin); renderTeam(); showPin(data.newPin); }
     catch (err) { toast(err.message, true); b.disabled = false; }
   });
+  document.querySelectorAll('button[data-remove]').forEach(b => b.onclick = () => confirmRemove(b.dataset.remove));
   document.querySelectorAll('button[data-toggle]').forEach(b => b.onclick = async () => {
     b.disabled = true;
     try { data = await call('adminSetEmployeeActive', token, b.dataset.toggle, b.dataset.on === '1'); renderTeam(); }
     catch (err) { toast(err.message, true); b.disabled = false; }
   });
+}
+
+function confirmRemove(name){
+  const m = data.team.find(x => x.name === name); if (!m) return;
+  const open = data.tasks.filter(t => t.assignee === name && t.approval === 'Approved' && t.status !== 'Done').length;
+  modal(`<h3>Remove ${esc(name)}?</h3>
+    <p>This will permanently:</p>
+    <ul style="margin:0 0 12px 18px;padding:0;line-height:1.7">
+      <li>delete their dashboard PIN and sign them out</li>
+      <li>delete their name and email (${esc(m.email)}) from the Team list</li>
+      ${m.role === 'Employee' ? '<li>remove their access to the Employees sheet and delete their tab</li>' : ''}
+    </ul>
+    <p class="muted">Their tasks stay in the Admin sheet as history.${open ? ` <b style="color:var(--bad)">${open} open task(s)</b> are still assigned to them; reassign them from All tasks.` : ''}</p>
+    <div class="field"><label>Type <b>${esc(name)}</b> to confirm</label><input type="text" id="rmConfirm" autocomplete="off"></div>
+    <div class="actions"><button class="btn ghost" id="rmCancel">Cancel</button><button class="btn bad" id="rmGo" disabled>Remove permanently</button></div>`);
+  $('rmConfirm').focus();
+  $('rmConfirm').oninput = e => { $('rmGo').disabled = e.target.value.trim() !== name; };
+  $('rmCancel').onclick = closeModal;
+  $('rmGo').onclick = async () => {
+    $('rmGo').disabled = true;
+    try { data = await call('adminRemoveEmployee', token, name); closeModal(); renderTeam(); toast(name + ' removed'); }
+    catch (err) { toast(err.message, true); $('rmGo').disabled = false; }
+  };
 }
 
 function showPin(p){

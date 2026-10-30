@@ -12,7 +12,7 @@
 const ALLOWED = new Set([
   'publicInfo', 'login', 'logout',
   'adminData', 'adminAddTask', 'adminUpdateTask', 'adminAddEmployee',
-  'adminSetEmployeeActive', 'adminResetPin', 'adminSyncNow',
+  'adminSetEmployeeActive', 'adminResetPin', 'adminRemoveEmployee', 'adminSyncNow',
   'empData', 'empUpdateTask'
 ]);
 
