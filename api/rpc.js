@@ -18,7 +18,8 @@ const ALLOWED = new Set([
   'adminSetEmployeeActive', 'adminResetPin', 'adminRemoveEmployee', 'adminSyncNow',
   'empData', 'empUpdateTask',
   'tmLogin',                    // handled here: PIN checked, then managerLogin in Apps Script
-  'decisionInfo', 'decide'      // approve/reject links from the admin email (signed token)
+  'decisionInfo', 'decide',     // approve/reject links from the admin email (signed token)
+  'adminDecideChange', 'adminReopen'
 ]);
 
 function samePin(a, b) {

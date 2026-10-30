@@ -142,7 +142,8 @@ function adminData(token) {
     open: tasks.filter(open).length,
     overdue: tasks.filter(t => t.overdue).length,
     blocked: tasks.filter(t => open(t) && t.status === 'Blocked').length,
-    doneToday: tasks.filter(t => t.completedMs && t.completedMs >= since).length
+    doneToday: tasks.filter(t => t.completedMs && t.completedMs >= since).length,
+    changes: tasks.filter(t => t.changeReq).length
   };
   const perEmployee = team.filter(m => m.role === 'Employee' && m.active).map(m => {
     const mine = tasks.filter(t => t.assignee === m.name);
@@ -202,16 +203,76 @@ function adminAddTask(token, t) {
   return data;
 }
 
+// ---------- Editing rules ----------
+// Pending / On Hold      -> admin and task managers edit freely
+// Approved, not Done     -> admin edits directly; task managers send a change (or cancel) request
+// Done / Rejected / Cancelled -> locked for everyone (admin can Reopen a Done task)
+const CHANGE_FIELDS = ['task', 'details', 'assignee', 'priority', 'due', 'startTime', 'limit'];
+const FIELD_LABELS = { task: 'Task', details: 'Details', assignee: 'Employee', priority: 'Priority',
+                       due: 'Date', startTime: 'Start time', limit: 'Time limit' };
+
+function taskState_(approval, status) {
+  if (status === 'Done' || approval === 'Rejected' || approval === 'Cancelled') return 'locked';
+  if (approval === 'Approved') return 'live';
+  return 'pending';
+}
+
+function lockedMessage_(id, approval, status) {
+  return id + ' is ' + (status === 'Done' ? 'Done' : approval) + ' and locked.' +
+    (status === 'Done' ? ' The admin can reopen it if it really needs changing.' : '');
+}
+
+/** Current editable values of a task row, in the same shape the dashboard sends. */
+function currentFields_(sh, row) {
+  const v = sh.getRange(row, 1, 1, ALL_COLS).getValues()[0];
+  return {
+    vals: v,
+    f: {
+      task: String(v[C.TASK - 1]), details: String(v[C.DETAILS - 1] || ''), assignee: String(v[C.ASSIGNEE - 1] || ''),
+      priority: String(v[C.PRIORITY - 1] || ''), due: v[C.DUE - 1] instanceof Date ? dayKey_(v[C.DUE - 1]) : '',
+      startTime: normStart_(v[T.START - 1]), limit: limitVal_(v[T.LIMIT - 1]) || ''
+    }
+  };
+}
+
+/** Field-by-field differences between the current task and the requested values. */
+function diffFields_(cur, t) {
+  const out = {};
+  CHANGE_FIELDS.forEach(k => {
+    if (t[k] === undefined) return;
+    let to = t[k];
+    if (k === 'startTime') to = normStart_(to);
+    if (k === 'limit') to = timeLimit_(to);
+    if (k === 'task' || k === 'details') to = String(to).trim();
+    if (String(to) !== String(cur[k])) out[k] = [cur[k], to];
+  });
+  return out;
+}
+
 /**
- * Edit a task. Admin: any field including approval; with t.sendNow, a task that becomes
- * Approved is emailed to the employee straight away. Task manager: any field except
- * approval, which they can only set to Cancelled.
+ * Edit a task (dashboard). Admin: applies directly; with t.sendNow a task that becomes Approved is
+ * emailed straight away. Task manager: edits Pending tasks directly; on Approved tasks the edit
+ * (or a cancel) becomes a change request for the admin.
  */
 function adminUpdateTask(token, id, t) {
   const sess = requireSession_(token, STAFF);
   t = t || {};
-  if (sess.role === 'manager' && t.approval !== undefined && t.approval !== 'Cancelled') {
-    throw new Error('Only the admin can approve or reject tasks.');
+  const sh = tasksSheet_();
+  const row = findTaskRow_(sh, id);
+  if (!row) throw new Error('Task ' + id + ' not found.');
+  const cur = currentFields_(sh, row);
+  const approval = cur.vals[C.APPROVAL - 1], status = cur.vals[C.STATUS - 1];
+  const state = taskState_(approval, status);
+  if (state === 'locked') throw new Error(lockedMessage_(id, approval, status));
+
+  if (sess.role === 'manager') {
+    if (t.approval !== undefined && t.approval !== 'Cancelled') throw new Error('Only the admin can approve or reject tasks.');
+    if (state === 'live') {
+      requestChange_(sh, row, cur, t, sess.name);
+      const data = adminData(token);
+      data.requested = true;
+      return data;
+    }
   }
   const res = applyTaskUpdate_(id, t);
   const data = adminData(token);
@@ -219,10 +280,12 @@ function adminUpdateTask(token, id, t) {
   return data;
 }
 
+/** Writes the edit to the Tasks tab. Callers check the editing rules first. */
 function applyTaskUpdate_(id, t) {
   const sh = tasksSheet_();
   const row = findTaskRow_(sh, id);
   if (!row) throw new Error('Task ' + id + ' not found.');
+  const before = currentFields_(sh, row);
   const cur = sh.getRange(row, C.TASK, 1, 6).getValues()[0];
   if (t.assignee !== undefined && !getTeamAll_().some(m => m.name === t.assignee && m.role === 'Employee')) {
     throw new Error('Unknown employee.');
@@ -243,22 +306,186 @@ function applyTaskUpdate_(id, t) {
   if (t.startTime !== undefined) sh.getRange(row, T.START).setNumberFormat('@').setValue(normStart_(t.startTime));
   if (t.limit !== undefined) sh.getRange(row, T.LIMIT).setValue(timeLimit_(t.limit));
   syncNow();
+  const after = sh.getRange(row, 1, 1, ALL_COLS).getValues()[0];
   let emailed = 0;
   if (t.sendNow && next[5] === 'Approved' && !wasApproved) {
-    emailed = sendNewTaskEmails_([sh.getRange(row, 1, 1, ALL_COLS).getValues()[0]], getSettings_());
+    emailed = sendNewTaskEmails_([after], getSettings_());
+  } else if (wasApproved) {
+    // Already-approved task changed: tell the employee if timing, assignee or approval changed
+    emailed = notifyEmployeeOfChange_(before, after, diffFields_(before.f, t));
   }
   return { emailed: emailed };
+}
+
+// ---------- Change requests (task manager -> admin) ----------
+function requestChange_(sh, row, cur, t, byName) {
+  const wantsCancel = t.approval === 'Cancelled';
+  const changes = wantsCancel ? {} : diffFields_(cur.f, t);
+  if (!wantsCancel && !Object.keys(changes).length) throw new Error('Nothing was changed.');
+  if (changes.assignee && !getTeamAll_().some(m => m.name === changes.assignee[1] && m.active && m.role === 'Employee')) {
+    throw new Error('Pick an active employee.');
+  }
+  const req = { by: byName, at: Date.now(), cancel: wantsCancel, changes: changes };
+  sh.getRange(row, T.CHANGE_REQ).setNumberFormat('@').setValue(JSON.stringify(req));
+  notifyAdminsChange_(cur.vals, req);
+}
+
+function readChangeReq_(v) {
+  if (!v) return null;
+  try { const r = JSON.parse(String(v)); return r && r.at ? r : null; } catch (e) { return null; }
+}
+
+function describeValue_(k, v) {
+  if (v === '' || v == null) return '(none)';
+  if (k === 'due') { const d = parseDay_(v); return d ? Utilities.formatDate(d, TZ, 'dd MMM yyyy') : String(v); }
+  if (k === 'limit') return v + ' min';
+  if (k === 'startTime') { const p = parseStart_(v); return p ? Utilities.formatDate(Utilities.parseDate('2000-01-01 ' + p.h + ':' + p.m, TZ, 'yyyy-MM-dd H:m'), TZ, 'h:mm a') : String(v); }
+  return String(v);
+}
+
+/** [{label, from, to}] for display in emails and the dashboard. */
+function changeLines_(req) {
+  if (!req) return [];
+  if (req.cancel) return [{ label: 'Cancel task', from: '', to: 'Cancelled' }];
+  return Object.keys(req.changes).map(k => ({
+    label: FIELD_LABELS[k] || k, from: describeValue_(k, req.changes[k][0]), to: describeValue_(k, req.changes[k][1])
+  }));
+}
+
+/** Admin approves or rejects a pending change request. */
+function adminDecideChange(token, id, approve) {
+  requireSession_(token, 'admin');
+  const res = decideChange_(id, approve === true);
+  const data = adminData(token);
+  data.emailed = res.emailed;
+  return data;
+}
+
+function decideChange_(id, approve, expectAt) {
+  const sh = tasksSheet_();
+  const row = findTaskRow_(sh, id);
+  if (!row) throw new Error('Task ' + id + ' not found.');
+  const cur = currentFields_(sh, row);
+  const req = readChangeReq_(cur.vals[T.CHANGE_REQ - 1]);
+  if (!req || (expectAt && Number(expectAt) !== Number(req.at))) {
+    return { already: true, emailed: 0 };
+  }
+  sh.getRange(row, T.CHANGE_REQ).setValue('');
+  if (!approve) return { already: false, approved: false, emailed: 0 };
+  const approval = cur.vals[C.APPROVAL - 1], status = cur.vals[C.STATUS - 1];
+  if (taskState_(approval, status) === 'locked') {
+    throw new Error(lockedMessage_(id, approval, status) + ' The change request was cleared.');
+  }
+  const t = {};
+  if (req.cancel) t.approval = 'Cancelled';
+  else Object.keys(req.changes).forEach(k => { t[k] = req.changes[k][1]; });
+  const res = applyTaskUpdate_(id, t);
+  return { already: false, approved: true, emailed: res.emailed };
+}
+
+/** Email to the admins with the requested change and signed approve / reject links. */
+function notifyAdminsChange_(vals, req) {
+  const s = getSettings_();
+  const to = approvalRecipients_(s);
+  if (!to) return;
+  const base = String(s['Dashboard URL'] || '').trim().replace(/\/+$/, '');
+  const id = String(vals[C.ID - 1]);
+  const tok = makeDecisionToken_(id, 'c' + req.at);
+  const link = a => base + '/approve?t=' + encodeURIComponent(tok) + '&a=' + a;
+  const btn = (label, a, bg) => '<a href="' + link(a) + '" style="background:' + bg +
+    ';color:#fff;padding:9px 14px;border-radius:6px;text-decoration:none;display:inline-block;margin:0 6px 6px 0">' + label + '</a>';
+  const brand = s['Company name'] ? s['Company name'] + ' ' : '';
+  const rows = changeLines_(req).map(l => '<tr><td style="padding:4px 12px 4px 0;color:#6b7487">' + esc_(l.label) + '</td>' +
+    (req.cancel ? '<td><b style="color:#c0392b">Cancel this task</b></td>' :
+      '<td><span style="text-decoration:line-through;color:#999">' + esc_(l.from) + '</span> &rarr; <b>' + esc_(l.to) + '</b></td>') + '</tr>').join('');
+  let html = '<p><b>' + esc_(req.by) + '</b> wants to ' + (req.cancel ? 'cancel' : 'change') + ' an approved task.</p>' +
+    '<div style="border:1px solid #e3e7ef;border-left:4px solid #2c5fb3;border-radius:8px;padding:12px 14px;margin:10px 0">' +
+    '<div style="font-size:15px;font-weight:bold">' + esc_(id) + ': ' + esc_(vals[C.TASK - 1]) + '</div>' +
+    '<div style="color:#6b7487;font-size:13px;margin:4px 0 8px">For ' + esc_(vals[C.ASSIGNEE - 1]) + ' &nbsp;|&nbsp; Status: ' + esc_(vals[C.STATUS - 1] || '-') +
+    ' &nbsp;|&nbsp; Due: ' + (fmtDue_(vals[T.DUE_AT - 1], vals[C.DUE - 1]) || '-') + '</div>' +
+    '<table style="border-collapse:collapse;font-size:14px">' + rows + '</table></div>';
+  if (base) {
+    html += '<p>' + btn(req.cancel ? 'Approve cancel' : 'Approve change', 'approve_change', '#1e8e4e') +
+      btn('Reject', 'reject_change', '#c0392b') + '</p>' +
+      '<p style="color:#6b7487;font-size:12px">Each button opens a confirm page. Or use the <a href="' + base + '/admin">admin dashboard</a>.</p>';
+  }
+  try {
+    sendMail_({ to: to, subject: brand + (req.cancel ? 'Cancel request: ' : 'Change request: ') + id + ' (by ' + req.by + ')', htmlBody: wrap_(html) });
+  } catch (e) { Logger.log('Change notification failed: ' + e); }
+}
+
+function approvalRecipients_(s) {
+  let list = listEmails_(s['Approval emails']);
+  if (!list.length) list = listEmails_(s['Admin emails'])
+    .concat(getTeam_().filter(m => m.role === 'Admin' && m.email).map(m => m.email));
+  return [...new Set(list.map(e => e.toLowerCase()))].join(',');
+}
+
+/** Approved task changed: email the employee when the date, time, limit or employee changed, or it was cancelled. */
+function notifyEmployeeOfChange_(before, after, diff) {
+  const s = getSettings_();
+  const team = getTeam_();
+  const emailOf = n => { const m = team.find(x => x.name === n && x.role === 'Employee'); return m && m.email; };
+  const brand = s['Company name'] ? s['Company name'] + ' ' : '';
+  const id = String(after[C.ID - 1]);
+  const title = String(after[C.TASK - 1]);
+  const link = employeeLink_(s);
+  const oldWho = before.f.assignee, newWho = String(after[C.ASSIGNEE - 1]);
+  let sent = 0;
+  const send = (to, subject, body) => {
+    if (!to) return;
+    try { sendMail_({ to: to, subject: brand + subject, htmlBody: wrap_(body +
+      '<p><a href="' + link + '">Open my tasks</a></p>') }); sent++; } catch (e) { Logger.log(e); }
+  };
+  if (after[C.APPROVAL - 1] === 'Cancelled' && before.vals[C.APPROVAL - 1] !== 'Cancelled') {
+    send(emailOf(oldWho), id + ' cancelled', '<p><b>' + esc_(id) + ': ' + esc_(title) + '</b> has been cancelled. You don\'t need to work on it.</p>');
+    return sent;
+  }
+  if (diff.assignee) {
+    send(emailOf(oldWho), id + ' reassigned', '<p><b>' + esc_(id) + ': ' + esc_(title) + '</b> has been moved to someone else. It is no longer on your list.</p>');
+    sent += sendNewTaskEmails_([after], s);
+    return sent;
+  }
+  if (diff.due || diff.startTime || diff.limit) {
+    const was = fmtDue_(before.vals[T.DUE_AT - 1], before.vals[C.DUE - 1]) + (before.f.limit ? ' · ' + before.f.limit + ' min' : '');
+    const now = fmtDue_(after[T.DUE_AT - 1], after[C.DUE - 1]) + (limitVal_(after[T.LIMIT - 1]) ? ' · ' + limitVal_(after[T.LIMIT - 1]) + ' min' : '');
+    send(emailOf(newWho), id + ' time changed: due ' + now,
+      '<p>The timing of <b>' + esc_(id) + ': ' + esc_(title) + '</b> has changed.</p>' +
+      '<p>Now due: <b>' + esc_(now) + '</b><br><span style="color:#999;text-decoration:line-through">Was: ' + esc_(was) + '</span></p>');
+  }
+  return sent;
+}
+
+// ---------- Reopen (admin only) ----------
+function adminReopen(token, id) {
+  requireSession_(token, 'admin');
+  const sh = tasksSheet_();
+  const row = findTaskRow_(sh, id);
+  if (!row) throw new Error('Task ' + id + ' not found.');
+  const v = sh.getRange(row, 1, 1, ALL_COLS).getValues()[0];
+  if (v[C.STATUS - 1] !== 'Done') throw new Error(id + ' is not Done.');
+  const when = Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy, h:mm a');
+  const log = String(v[T.REOPENED - 1] || '');
+  sh.getRange(row, T.REOPENED).setNumberFormat('@').setValue((log ? log + '; ' : '') + 'Reopened by Admin ' + when);
+  sh.getRange(row, C.STATUS).setValue('In Progress');
+  sh.getRange(row, C.COMPLETED).setValue('');
+  sh.getRange(row, T.TAKEN).setValue('');
+  // The employee tab still says Done; switch it back so the next sync doesn't re-close the task
+  const tab = SpreadsheetApp.openById(getSettings_()['Employee sheet ID']).getSheetByName(String(v[C.ASSIGNEE - 1]));
+  if (tab && tab.getLastRow() > 1) {
+    const ids = tab.getRange(2, E.ID, tab.getLastRow() - 1, 1).getValues().map(r => r[0]);
+    const i = ids.indexOf(id);
+    if (i >= 0) tab.getRange(i + 2, E.STATUS).setValue('In Progress');
+  }
+  syncNow();
+  return adminData(token);
 }
 
 // ---------- Approve / reject from email ----------
 /** Email to admins when a task manager submits a task, with signed decision links. */
 function notifyAdminsNewTask_(vals, createdBy) {
   const s = getSettings_();
-  // Approval requests go to "Approval emails" in Settings; if that is empty, to the admins
-  let list = listEmails_(s['Approval emails']);
-  if (!list.length) list = listEmails_(s['Admin emails'])
-    .concat(getTeam_().filter(m => m.role === 'Admin' && m.email).map(m => m.email));
-  const to = [...new Set(list.map(e => e.toLowerCase()))].join(',');
+  const to = approvalRecipients_(s);
   if (!to) return;
   const base = String(s['Dashboard URL'] || '').trim().replace(/\/+$/, '');
   const id = String(vals[C.ID - 1]);
@@ -288,19 +515,22 @@ function notifyAdminsNewTask_(vals, createdBy) {
   } catch (e) { Logger.log('Admin notification failed: ' + e); }
 }
 
-function makeDecisionToken_(id) {
+/** Signed link token: "<id>.<kind>.<expiry>.<signature>"; kind is "t" (new task) or "c<requestTime>" (change). */
+function makeDecisionToken_(id, kind) {
   const exp = Date.now() + DECISION_DAYS * 86400000;
-  const payload = id + '.' + exp;
+  const payload = id + '.' + (kind || 't') + '.' + exp;
   return payload + '.' + sign_(payload);
 }
 
 function readDecisionToken_(tok) {
   const parts = String(tok || '').split('.');
-  if (parts.length !== 3) throw new Error('This link is not valid.');
-  const payload = parts[0] + '.' + parts[1];
-  if (sign_(payload) !== parts[2]) throw new Error('This link is not valid.');
-  if (Number(parts[1]) < Date.now()) throw new Error('This link has expired. Use the admin dashboard instead.');
-  return parts[0];
+  let id, kind, exp, sig, payload;
+  if (parts.length === 3) { [id, exp, sig] = parts; kind = 't'; payload = id + '.' + exp; }   // links sent before change requests existed
+  else if (parts.length === 4) { [id, kind, exp, sig] = parts; payload = id + '.' + kind + '.' + exp; }
+  else throw new Error('This link is not valid.');
+  if (sign_(payload) !== sig) throw new Error('This link is not valid.');
+  if (Number(exp) < Date.now()) throw new Error('This link has expired. Use the admin dashboard instead.');
+  return { id: id, kind: kind };
 }
 
 function sign_(text) {
@@ -311,24 +541,35 @@ function sign_(text) {
 
 /** Shown on the confirm page opened from the email. */
 function decisionInfo(tok) {
-  const id = readDecisionToken_(tok);
-  const t = readTasksForWeb_().find(x => x.id === id);
+  const d = readDecisionToken_(tok);
+  const t = readTasksForWeb_().find(x => x.id === d.id);
   if (!t) throw new Error('This task no longer exists.');
-  return { id: t.id, task: t.task, details: t.details, assignee: t.assignee, priority: t.priority,
-           dueLabel: t.dueLabel, limit: t.limit, createdBy: t.createdBy, approval: t.approval };
+  const info = { id: t.id, task: t.task, details: t.details, assignee: t.assignee, priority: t.priority,
+                 dueLabel: t.dueLabel, limit: t.limit, createdBy: t.createdBy, approval: t.approval, status: t.status,
+                 kind: d.kind.charAt(0) === 'c' ? 'change' : 'task' };
+  if (info.kind === 'change') {
+    const live = t.changeReq && String(t.changeReq.at) === d.kind.slice(1);
+    info.change = live ? t.changeReq : null;   // null = already decided or replaced by a newer request
+  }
+  return info;
 }
 
 function decide(tok, action) {
-  const id = readDecisionToken_(tok);
+  const d = readDecisionToken_(tok);
+  if (d.kind.charAt(0) === 'c') {
+    if (action !== 'approve_change' && action !== 'reject_change') throw new Error('Unknown action.');
+    const r = decideChange_(d.id, action === 'approve_change', d.kind.slice(1));
+    return { id: d.id, kind: 'change', already: r.already, approved: !!r.approved, emailed: r.emailed || 0 };
+  }
   const map = { approve_now: 'Approved', approve: 'Approved', hold: 'On Hold', reject: 'Rejected' };
   if (!map[action]) throw new Error('Unknown action.');
-  const t = readTasksForWeb_().find(x => x.id === id);
+  const t = readTasksForWeb_().find(x => x.id === d.id);
   if (!t) throw new Error('This task no longer exists.');
   if (t.approval !== 'Pending' && t.approval !== 'On Hold') {
-    return { id: id, approval: t.approval, already: true, emailed: 0 };
+    return { id: d.id, approval: t.approval, already: true, emailed: 0 };
   }
-  const res = applyTaskUpdate_(id, { approval: map[action], sendNow: action === 'approve_now' });
-  return { id: id, approval: map[action], already: false, emailed: res.emailed };
+  const res = applyTaskUpdate_(d.id, { approval: map[action], sendNow: action === 'approve_now' });
+  return { id: d.id, approval: map[action], already: false, emailed: res.emailed };
 }
 
 function adminAddEmployee(token, e) {
@@ -549,7 +790,10 @@ function readTasksForWeb_() {
         completedMs: completed instanceof Date ? completed.getTime() : 0,
         overdue: approval === 'Approved' && status !== 'Done' &&
           (dueAt instanceof Date ? dueAt.getTime() < nowMs : due instanceof Date && dayKey_(due) < todayKey),
-        createdBy: String(r[T.CREATED_BY - 1] || '')
+        createdBy: String(r[T.CREATED_BY - 1] || ''),
+        changeReq: (function (req) { return req ? { by: req.by, at: req.at, cancel: !!req.cancel, lines: changeLines_(req) } : null; })(readChangeReq_(r[T.CHANGE_REQ - 1])),
+        reopened: String(r[T.REOPENED - 1] || ''),
+        state: taskState_(approval, status)
       };
     });
 }

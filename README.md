@@ -4,6 +4,7 @@ A ticketing system for a small team, built on Google Sheets and Google Apps Scri
 
 - **Admins** add tasks, assign them to employees and approve them.
 - **Tickets are timed:** each task has a date, start time and a 30 / 45 / 60 min limit. Employees see a live countdown; admins see time taken vs limit.
+- **Editing rules:** Pending tasks can be edited by admin and task managers. Approved tasks can be edited directly by the admin; task managers send a change (or cancel) request that the admin approves by email or on the dashboard. Done, Rejected and Cancelled tasks are locked (the admin can Reopen a Done task). The employee is emailed when an approved task's date, time, limit or assignee changes, or it is cancelled.
 - **Task managers** add and edit tasks; the admin approves them by email or on the dashboard.
 - **Employees** see only their approved tasks and update status, progress and remarks. A ticket is locked once marked Done.
 - **Emails** (sender name "Task Tracker"): instant "Send now" emails, approval requests with Approve / Reject buttons, a PIN welcome email for new employees, and an evening summary (employees get tomorrow's list; admins get a summary).

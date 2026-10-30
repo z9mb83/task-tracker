@@ -222,3 +222,13 @@ input[type=date],input[type=time]{min-height:40px}
 .tab:focus-visible{outline:2px solid rgba(44,79,138,.4);outline-offset:-4px;border-radius:6px}
 .done-lock{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;padding:10px 12px;background:var(--ok-bg);border-radius:8px}
 input[type=range]:disabled{opacity:.5}
+
+/* change requests and locked tasks */
+.change-box{border:1px solid #cfdcf3;background:var(--info-bg);border-radius:10px;padding:10px 12px;margin:8px 0 12px;font-size:13px}
+.change-box .cb-head{margin-bottom:6px}
+.change-box .cb-line{margin:2px 0}
+.change-box s{color:var(--muted)}
+.change-item{padding:10px 0;border-bottom:1px solid var(--line)}
+.change-item:last-child{border-bottom:0}
+.locked-note{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--grey-bg);border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:10px}
+.locked-note.info{background:var(--info-bg);color:var(--info)}

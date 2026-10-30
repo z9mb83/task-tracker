@@ -25,6 +25,8 @@
 | R | Due At | Script: date + start time + time limit |
 | S | Started At | Script: when the employee first sets In Progress |
 | T | Time Taken (min) | Script: Done time minus Started At (or the scheduled start) |
+| U | Change Request | Script: pending change/cancel request from a task manager (JSON) |
+| V | Reopened | Script: log of admin reopens |
 
 ### Team
 | Col | Header | Values |

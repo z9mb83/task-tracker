@@ -27,9 +27,12 @@ const C = {
 };
 const ADMIN_COLS = 14;
 // Ticket timing columns (added after Created By in column O)
-const T = { CREATED_BY: 15, START: 16, LIMIT: 17, DUE_AT: 18, STARTED_AT: 19, TAKEN: 20 };
-const ALL_COLS = 20;
-const TASK_HEADERS_EXTRA = ['Created By', 'Start Time', 'Time Limit (min)', 'Due At', 'Started At', 'Time Taken (min)'];
+const T = { CREATED_BY: 15, START: 16, LIMIT: 17, DUE_AT: 18, STARTED_AT: 19, TAKEN: 20, CHANGE_REQ: 21, REOPENED: 22 };
+const ALL_COLS = 22;
+const TASK_HEADERS_EXTRA = ['Created By', 'Start Time', 'Time Limit (min)', 'Due At', 'Started At', 'Time Taken (min)',
+                            'Change Request', 'Reopened'];
+// Columns that are frozen once a task is Done, Rejected or Cancelled
+const LOCKED_COLS = [C.TASK, C.DETAILS, C.ASSIGNEE, C.PRIORITY, C.DUE, C.APPROVAL, T.START, T.LIMIT];
 const LIMITS = [30, 45, 60];
 const DEFAULT_LIMIT = 45;
 
@@ -115,6 +118,17 @@ function onAdminEdit(e) {
   const sh = e.range.getSheet();
   if (sh.getName() !== TASKS_TAB || e.range.getRow() < 2) return;
   const col = e.range.getColumn();
+  // Done / Rejected / Cancelled tasks are locked: undo single-cell edits to their task fields
+  if (e.range.getNumRows() === 1 && e.range.getNumColumns() === 1 && LOCKED_COLS.includes(col)) {
+    const row = sh.getRange(e.range.getRow(), 1, 1, ADMIN_COLS).getValues()[0];
+    const approval = col === C.APPROVAL ? e.oldValue : row[C.APPROVAL - 1];
+    if (row[C.ID - 1] && (row[C.STATUS - 1] === 'Done' || approval === 'Rejected' || approval === 'Cancelled')) {
+      if (e.oldValue !== undefined) e.range.setValue(e.oldValue); else e.range.clearContent();
+      SpreadsheetApp.getActive().toast(row[C.ID - 1] + ' is ' + (row[C.STATUS - 1] === 'Done' ? 'Done' : approval) +
+        ' and locked. Use Reopen on the admin dashboard if it really needs changing.', 'Locked', 6);
+      return;
+    }
+  }
   if ((col >= C.TASK && col <= C.APPROVAL) || col === T.START || col === T.LIMIT) syncNow();
 }
 
@@ -506,6 +520,7 @@ function ensureTaskCols_(sh) {
     sh.getRange(2, T.LIMIT, n, 1).setNumberFormat('0');               // minutes
     sh.getRange(2, T.DUE_AT, n, 2).setNumberFormat('dd-mmm h:mm am/pm');
     sh.getRange(2, T.TAKEN, n, 1).setNumberFormat('0');
+    sh.getRange(2, T.CHANGE_REQ, n, 2).setNumberFormat('@');
   }
   const hdr = sh.getRange(1, T.CREATED_BY, 1, TASK_HEADERS_EXTRA.length);
   const cur = hdr.getValues()[0];

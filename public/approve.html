@@ -56,6 +56,7 @@
     let t;
     try { t = await call('decisionInfo', tok); }
     catch (err) { done(err.message, 'You can still approve it from the admin dashboard.'); return; }
+    if (t.kind === 'change') { showChange(t); return; }
     if (t.approval !== 'Pending' && t.approval !== 'On Hold') { done(t.id + ' is already ' + t.approval + '.', 'Nothing more to do.'); return; }
     $('content').innerHTML = `
       <div class="t-title">${esc(t.task)}</div>
@@ -83,6 +84,31 @@
         $('err').textContent = err.message;
         document.querySelectorAll('[data-a]').forEach(x => x.disabled = false);
       }
+    });
+  }
+  function showChange(t){
+    const c = t.change;
+    if (!c) { done('No pending change for ' + t.id + '.', 'It was already approved or rejected, or replaced by a newer request.'); return; }
+    $('content').innerHTML = `
+      <div class="t-title">${esc(t.id)} · ${esc(t.task)}</div>
+      <div class="meta"><span>For <b>${esc(t.assignee)}</b></span><span>Status <b>${esc(t.status || '-')}</b></span>
+        <span>Due <b>${esc(t.dueLabel || 'none')}</b>${t.limit ? ' · ' + esc(t.limit) + ' min' : ''}</span></div>
+      <p style="margin:0 0 8px"><b>${esc(c.by)}</b> wants to ${c.cancel ? '<b style="color:var(--bad)">cancel</b> this task.' : 'change:'}</p>
+      ${c.cancel ? '' : `<div class="card" style="background:var(--info-bg);box-shadow:none;padding:10px 12px;margin-bottom:14px">${
+        c.lines.map(l => `<div><span class="muted">${esc(l.label)}:</span> <s class="muted">${esc(l.from)}</s> &rarr; <b>${esc(l.to)}</b></div>`).join('')}</div>`}
+      <div class="choices">
+        <button class="btn ok ${picked==='approve_change'?'picked':''}" data-a="approve_change">${c.cancel ? 'Approve cancel' : 'Approve change'} <span style="font-weight:400;opacity:.85">· employee is emailed if timing changes</span></button>
+        <button class="btn bad ${picked==='reject_change'?'picked':''}" data-a="reject_change">Reject</button>
+      </div>
+      <div class="err" id="err"></div>`;
+    document.querySelectorAll('[data-a]').forEach(b => b.onclick = async () => {
+      document.querySelectorAll('[data-a]').forEach(x => x.disabled = true);
+      try {
+        const r = await call('decide', tok, b.dataset.a);
+        if (r.already) done('This change was already handled.', 'Nothing more to do.');
+        else done(r.id + ': ' + (r.approved ? (c.cancel ? 'cancel approved.' : 'change approved.') : 'change rejected.'),
+          r.approved && r.emailed ? 'The employee has been emailed.' : '');
+      } catch (err) { $('err').textContent = err.message; document.querySelectorAll('[data-a]').forEach(x => x.disabled = false); }
     });
   }
   load();

@@ -3,7 +3,7 @@
   "private": true,
   "description": "Offline tests: dashboard flows against a mock Apps Script, and ticket timing logic",
   "scripts": {
-    "test": "node timing.test.js && node dashboard.test.js && node roles.test.js"
+    "test": "node timing.test.js && node unit-rules.test.js && node dashboard.test.js && node roles.test.js && node rules.test.js"
   },
   "devDependencies": {
     "jsdom": "^24.0.0"

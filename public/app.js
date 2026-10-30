@@ -137,7 +137,8 @@ function renderInner(){
     if (!IS_ADMIN && (currentTab === 'approvals' || currentTab === 'team')) currentTab = 'overview';
     $('appTitle').textContent = (data.brand ? data.brand + ' ' : '') + (IS_ADMIN ? 'Admin dashboard' : 'Task manager · ' + (data.me || ''));
     $('appSub').textContent = data.stats.pending + ' waiting for approval · ' + data.stats.overdue + ' overdue';
-    const pc = $('pendingCount'); pc.textContent = data.stats.pending; pc.classList.toggle('hidden', !data.stats.pending);
+    const waiting = data.stats.pending + (data.stats.changes || 0);
+    const pc = $('pendingCount'); pc.textContent = waiting; pc.classList.toggle('hidden', !waiting);
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === currentTab));
     ({overview:renderOverview, tasks:renderTasks, approvals:renderApprovals, newtask:renderNewTask, team:renderTeam})[currentTab]();
   } else {
@@ -154,10 +155,15 @@ function renderOverview(){
     <td class="num" data-label="Done">${e.done}</td><td class="num" data-label="Pending">${e.pending}</td></tr>`).join('');
   const attention = data.tasks.filter(t => t.overdue || (t.approval==='Approved' && t.status==='Blocked'));
   const pending = IS_ADMIN ? data.tasks.filter(t => t.approval === 'Pending') : [];
+  const changes = IS_ADMIN ? data.tasks.filter(t => t.changeReq) : [];
   $('main').innerHTML = `
     ${pending.length ? `<div class="card approvals-top">
       <h3>Waiting for your approval <span class="count-pill">${pending.length}</span></h3>
       ${approvalsTable(pending)}
+    </div>` : ''}
+    ${changes.length ? `<div class="card approvals-top">
+      <h3>Change requests <span class="count-pill">${changes.length}</span></h3>
+      ${changeList(changes)}
     </div>` : ''}
     <div class="stats">
       <div class="stat warn ${IS_ADMIN ? 'click' : ''}" ${IS_ADMIN ? 'data-goto="approvals" title="Open Approvals"' : ''}><div class="n">${s.pending}</div><div class="l">Waiting for approval</div></div>
@@ -175,6 +181,7 @@ function renderOverview(){
   document.querySelectorAll('[data-goto]').forEach(el => el.onclick = () => { currentTab = el.dataset.goto; render(); window.scrollTo(0, 0); });
   bindTaskRows();
   bindApprovalButtons();
+  bindChangeButtons();
 }
 
 function taskTable(list, emptyMsg){
@@ -187,7 +194,7 @@ function taskTable(list, emptyMsg){
       <td data-label="For">${esc(t.assignee)}</td>
       <td data-label="Due" class="${t.overdue ? 'overdue' : ''}">${esc(dueText(t))}${countdownHtml(t)}</td>
       <td>${prioPill(t.priority)}</td>
-      <td>${approvalPill(t.approval)}</td>
+      <td>${approvalPill(t.approval)}${t.changeReq ? ' <span class="pill p-info">Change pending</span>' : ''}</td>
       <td class="st">${statusPill(t.status)}${t.status === 'Done' ? takenHtml(t) : t.approval==='Approved' ? bar(t.progress) : ''}</td>
       <td class="hide-sm full">${t.remarks ? `<div class="t-sub">${esc(t.remarks)}</div>` : ''}</td>
     </tr>`).join('')}
@@ -307,9 +314,19 @@ function bindApprovalButtons(){
 }
 function renderApprovals(){
   const list = data.tasks.filter(t => t.approval === 'Pending' || t.approval === 'On Hold');
+  const changes = data.tasks.filter(t => t.changeReq);
   $('main').innerHTML = `<div class="card"><h3>Waiting for approval</h3>${
-    !list.length ? '<div class="empty">Nothing waiting for approval.</div>' : approvalsTable(list)}</div>`;
+    !list.length ? '<div class="empty">Nothing waiting for approval.</div>' : approvalsTable(list)}</div>
+    <div class="card"><h3>Change requests</h3>${
+    !changes.length ? '<div class="empty">No change requests from task managers.</div>' : changeList(changes)}</div>`;
   bindApprovalButtons();
+  bindChangeButtons();
+}
+function changeList(list){
+  return list.map(t => `<div class="change-item">
+    <div class="t-title">${esc(t.id)} · ${esc(t.task)}</div>
+    <div class="t-sub">For ${esc(t.assignee)} · ${esc(dueText(t))} · ${statusPill(t.status)}</div>
+    ${changeBox(t, true)}</div>`).join('');
 }
 
 function activeEmployees(){ return data.team.filter(m => m.role === 'Employee' && m.active).map(m => m.name); }
@@ -424,10 +441,77 @@ function showPin(p){
   $('cpPin').onclick = () => { navigator.clipboard.writeText(msg).then(() => toast('Copied'), () => toast('Copy failed, select the PIN manually', true)); };
 }
 
+function taskStateOf(t){
+  if (t.state) return t.state;
+  if (t.status === 'Done' || t.approval === 'Rejected' || t.approval === 'Cancelled') return 'locked';
+  return t.approval === 'Approved' ? 'live' : 'pending';
+}
+function changeBox(t, withButtons){
+  const r = t.changeReq; if (!r) return '';
+  return `<div class="change-box">
+    <div class="cb-head"><span class="pill p-info">${r.cancel ? 'Cancel requested' : 'Change requested'}</span> by <b>${esc(r.by)}</b></div>
+    ${r.cancel ? '<div class="cb-line"><b style="color:var(--bad)">Cancel this task</b></div>' :
+      r.lines.map(l => `<div class="cb-line"><span class="muted">${esc(l.label)}:</span> <s>${esc(l.from)}</s> &rarr; <b>${esc(l.to)}</b></div>`).join('')}
+    ${withButtons ? `<div class="btns" style="margin-top:8px">
+      <button class="btn ok small" data-chg="1" data-id="${esc(t.id)}">${r.cancel ? 'Approve cancel' : 'Approve change'}</button>
+      <button class="btn bad small" data-chg="0" data-id="${esc(t.id)}">Reject</button></div>` : ''}
+  </div>`;
+}
+function bindChangeButtons(after){
+  document.querySelectorAll('button[data-chg]').forEach(b => b.onclick = async () => {
+    document.querySelectorAll(`button[data-chg][data-id="${b.dataset.id}"]`).forEach(x => x.disabled = true);
+    const ok = b.dataset.chg === '1';
+    try {
+      data = await call('adminDecideChange', token, b.dataset.id, ok);
+      toast(b.dataset.id + (ok ? ': change approved' + (data.emailed ? ', employee emailed' : '') : ': change rejected'));
+      if (after) after(); render();
+    } catch (err) {
+      toast(err.message, true);
+      document.querySelectorAll(`button[data-chg][data-id="${b.dataset.id}"]`).forEach(x => x.disabled = false);
+    }
+  });
+}
+function infoBox(t){
+  return `<div class="card" style="background:var(--bg);box-shadow:none;padding:12px">
+      <div><b>Employee status:</b> ${statusPill(t.status)} ${t.approval==='Approved' && t.status !== 'Done' ? Math.round(t.progress*100)+'%' : ''} ${takenHtml(t)}</div>
+      ${t.remarks ? `<div style="margin-top:6px"><b>Remarks:</b> ${esc(t.remarks)}</div>` : ''}
+      <div class="muted" style="margin-top:6px;font-size:12px">${t.createdBy ? 'Added by ' + esc(t.createdBy) + ' · ' : ''}Created ${esc(t.created||'-')}${t.approvedOn ? ' · Approved '+esc(t.approvedOn) : ''}${t.updated ? ' · Updated '+esc(t.updated) : ''}${t.completed ? ' · Completed '+esc(t.completed) : ''}${t.reopened ? ' · ' + esc(t.reopened) : ''}</div>
+    </div>`;
+}
+
 function openTask(id){
   const t = data.tasks.find(x => x.id === id); if (!t) return;
+  const state = taskStateOf(t);
   const emps = data.team.filter(m => m.role === 'Employee').map(m => m.name);
-  modal(`<h3>${esc(t.id)} · Edit task</h3>
+
+  // Done / Rejected / Cancelled: read-only
+  if (state === 'locked') {
+    const why = t.status === 'Done' ? 'Done' : t.approval;
+    modal(`<h3>${esc(t.id)} · ${esc(t.task)}</h3>
+      <div class="locked-note">${approvalPill(t.approval)} ${t.status === 'Done' ? statusPill('Done') : ''} <span>This task is ${esc(why)} and locked.</span></div>
+      ${t.details ? `<div class="t-sub" style="max-width:none;margin:10px 0;white-space:pre-wrap">${esc(t.details)}</div>` : ''}
+      <div class="meta" style="display:flex;gap:8px 14px;flex-wrap:wrap;font-size:13px;margin-bottom:10px">
+        <span><span class="muted">For</span> ${esc(t.assignee)}</span><span><span class="muted">Due</span> ${esc(dueText(t))}</span>${prioPill(t.priority)}</div>
+      ${infoBox(t)}
+      <div class="actions">
+        ${IS_ADMIN && t.status === 'Done' ? '<button class="btn ghost" id="etReopen" style="margin-right:auto">Reopen</button>' : ''}
+        <button class="btn" id="etClose">Close</button></div>`);
+    $('etClose').onclick = closeModal;
+    if ($('etReopen')) $('etReopen').onclick = async () => {
+      const b = $('etReopen');
+      if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'Click again to reopen ' + id; b.classList.add('bad'); return; }
+      b.disabled = true;
+      try { data = await call('adminReopen', token, id); closeModal(); render(); toast(id + ' reopened (In Progress)'); }
+      catch (err) { toast(err.message, true); b.disabled = false; }
+    };
+    return;
+  }
+
+  const live = state === 'live';
+  const managerRequest = !IS_ADMIN && live;   // task manager editing an approved task -> change request
+  modal(`<h3>${esc(t.id)} · ${managerRequest ? 'Request a change' : 'Edit task'}</h3>
+    ${managerRequest ? '<div class="locked-note info">This task is approved and with the employee. Your changes go to the admin for approval before they apply.</div>' : ''}
+    ${changeBox(t, IS_ADMIN)}
     <div class="field"><label>Task</label><input type="text" id="etTask" value="${esc(t.task)}"></div>
     <div class="field"><label>Details</label><textarea id="etDetails">${esc(t.details)}</textarea></div>
     <div class="row">
@@ -437,26 +521,26 @@ function openTask(id){
     ${timeFields('et', t)}
     <div class="row">
       <div class="field"><label>Approval</label>${IS_ADMIN
-        ? `<select id="etApp">${options(APPROVALS, t.approval)}</select>`
+        ? `<select id="etApp">${options(live ? ['Approved', 'Cancelled'] : APPROVALS, t.approval)}</select>`
         : `<div style="padding:8px 0">${approvalPill(t.approval)}</div>`}</div>
     </div>
-    ${IS_ADMIN && t.approval !== 'Approved' ? '<div class="field"><label class="switch"><input type="checkbox" id="etSend"> If approving, email the employee now</label></div>' : ''}
-    <div class="card" style="background:var(--bg);box-shadow:none;padding:12px">
-      <div><b>Employee status:</b> ${statusPill(t.status)} ${t.approval==='Approved' && t.status !== 'Done' ? Math.round(t.progress*100)+'%' : ''} ${takenHtml(t)}</div>
-      ${t.remarks ? `<div style="margin-top:6px"><b>Remarks:</b> ${esc(t.remarks)}</div>` : ''}
-      <div class="muted" style="margin-top:6px;font-size:12px">${t.createdBy ? 'Added by ' + esc(t.createdBy) + ' · ' : ''}Created ${esc(t.created||'-')}${t.approvedOn ? ' · Approved '+esc(t.approvedOn) : ''}${t.updated ? ' · Updated '+esc(t.updated) : ''}${t.completed ? ' · Completed '+esc(t.completed) : ''}</div>
-    </div>
+    ${IS_ADMIN && !live ? '<div class="field"><label class="switch"><input type="checkbox" id="etSend"> If approving, email the employee now</label></div>' : ''}
+    ${IS_ADMIN && live ? '<div class="muted" style="font-size:12px;margin:-4px 0 10px">The employee is emailed if you change the date, time, limit or employee, or cancel the task.</div>' : ''}
+    ${infoBox(t)}
     <div class="actions">
-      ${!IS_ADMIN && t.approval !== 'Cancelled' ? '<button class="btn bad" id="etCancelTask" style="margin-right:auto">Cancel task</button>' : ''}
-      <button class="btn ghost" id="etClose">Close</button><button class="btn" id="etSave">Save changes</button></div>`);
+      ${!IS_ADMIN ? `<button class="btn bad" id="etCancelTask" style="margin-right:auto">${live ? 'Request cancel' : 'Cancel task'}</button>` : ''}
+      <button class="btn ghost" id="etClose">Close</button><button class="btn" id="etSave">${managerRequest ? 'Request change' : 'Save changes'}</button></div>`);
   bindTimeFields('et');
+  bindChangeButtons(closeModal);
   $('etClose').onclick = closeModal;
   if ($('etCancelTask')) $('etCancelTask').onclick = async () => {
     const b = $('etCancelTask');
-    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'Click again to cancel ' + id; return; }
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = live ? 'Click again to send cancel request' : 'Click again to cancel ' + id; return; }
     b.disabled = true;
-    try { data = await call('adminUpdateTask', token, id, { approval: 'Cancelled' }); closeModal(); render(); toast(id + ' cancelled'); }
-    catch (err) { toast(err.message, true); b.disabled = false; }
+    try {
+      data = await call('adminUpdateTask', token, id, { approval: 'Cancelled' });
+      closeModal(); render(); toast(data.requested ? 'Cancel request sent to the admin' : id + ' cancelled');
+    } catch (err) { toast(err.message, true); b.disabled = false; }
   };
   $('etSave').onclick = async () => {
     $('etSave').disabled = true;
@@ -465,7 +549,8 @@ function openTask(id){
         priority:$('etPrio').value }, timeValues('et'));
       if (IS_ADMIN) { upd.approval = $('etApp').value; upd.sendNow = !!($('etSend') && $('etSend').checked); }
       data = await call('adminUpdateTask', token, id, upd);
-      closeModal(); render(); toast(id + ' saved' + (upd.sendNow && data.emailed ? ', emailed to employee' : ''));
+      closeModal(); render();
+      toast(data.requested ? 'Change sent to the admin for approval' : id + ' saved' + (data.emailed ? ', employee emailed' : ''));
     } catch (err) { toast(err.message, true); $('etSave').disabled = false; }
   };
 }
