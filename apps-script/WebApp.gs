@@ -1,9 +1,9 @@
 /**
  * TASK TRACKER - Web dashboard (admin + employee)
  * ------------------------------------------------------------
- * Serves the dashboard from the same Apps Script project as Code.gs.
- *   Employee dashboard:  <web app URL>
- *   Admin dashboard:     <web app URL>?page=admin
+ * Backend for the Vercel dashboard (called through Api.gs).
+ *   Employee dashboard:  <Vercel URL>
+ *   Admin dashboard:     <Vercel URL>/admin
  *
  * Admin login:    one shared admin password (set from the sheet menu:
  *                 Task System > Set dashboard admin password)
@@ -21,16 +21,12 @@ const PRIORITIES = ['High', 'Medium', 'Low'];
 const APPROVALS = ['Pending', 'Approved', 'Rejected', 'On Hold'];
 
 // ---------- Web app entry ----------
-function doGet(e) {
-  const t = HtmlService.createTemplateFromFile('Index');
-  t.page = (e && e.parameter && e.parameter.page === 'admin') ? 'admin' : 'employee';
-  let brand = '';
-  try { brand = String(getSettings_()['Company name'] || ''); } catch (err) { /* settings missing */ }
-  t.brand = brand;
-  return t.evaluate()
-    .setTitle((brand ? brand + ' ' : '') + (t.page === 'admin' ? 'Admin Dashboard' : 'My Tasks'))
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+// The dashboard lives on Vercel. Opening the Apps Script URL directly only shows a pointer to it;
+// Vercel talks to this project through doPost (Api.gs).
+function doGet() {
+  let link = '';
+  try { link = String(getSettings_()['Dashboard URL'] || '').trim(); } catch (err) { /* settings missing */ }
+  return ContentService.createTextOutput('Task Tracker API. Open the dashboard' + (link ? ': ' + link : ' on Vercel.'));
 }
 
 // ---------- Menu helpers (called from the sheet menu in Code.gs) ----------
@@ -47,14 +43,10 @@ function setDashboardPassword() {
 }
 
 function showDashboardLinks() {
-  const url = ScriptApp.getService().getUrl();
   const ui = SpreadsheetApp.getUi();
-  if (!url) {
-    ui.alert('The dashboard is not deployed yet.\n\nIn Apps Script: Deploy > New deployment > Web app,\n' +
-      'Execute as: Me, Who has access: Anyone.');
-    return;
-  }
-  ui.alert('Dashboard links\n\nAdmin:\n' + url + '?page=admin\n\nEmployees:\n' + url);
+  const link = String(getSettings_()['Dashboard URL'] || '').trim().replace(/\/+$/, '');
+  if (!link) { ui.alert('Add your Vercel link next to "Dashboard URL" in the Settings tab first.'); return; }
+  ui.alert('Dashboard links\n\nAdmin:\n' + link + '/admin\n\nEmployees:\n' + link);
 }
 
 // ---------- Auth ----------

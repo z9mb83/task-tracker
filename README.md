@@ -40,7 +40,6 @@ tab (in the sheet or through the dashboard), and the script copies their updates
 | `apps-script/Code.gs` | Sync between the two sheets, daily emails, sheet menu, employee tab setup and protection |
 | `apps-script/WebApp.gs` | Dashboard backend: logins, admin and employee actions |
 | `apps-script/Api.gs` | JSON API that the Vercel dashboard calls |
-| `apps-script/Index.html` | Optional: same dashboard served by Apps Script itself |
 | `apps-script/appsscript.json` | Project manifest (IST time zone, web app settings) |
 | `public/` | Vercel dashboard pages (`index.html` employees, `admin.html` admin) |
 | `api/rpc.js` | Vercel function that forwards dashboard calls to Apps Script |
@@ -58,7 +57,7 @@ ID (the long string in its URL) next to `Employee sheet ID`.
 1. In the Admin sheet: **Extensions > Apps Script**.
 2. Replace `Code.gs` with `apps-script/Code.gs`.
 3. **+ > Script**, name it `WebApp`, paste `apps-script/WebApp.gs`.
-4. **+ > HTML**, name it `Index` (exactly), paste `apps-script/Index.html`.
+4. **+ > Script**, name it `Api`, paste `apps-script/Api.gs`.
 5. Project Settings (gear icon): set the time zone to **(GMT+05:30) India Standard Time**.
 6. Save. Pick `setup` in the function dropdown and click **Run**. Approve the permissions
    (on personal Gmail: Advanced > Go to project > Allow).
