@@ -82,11 +82,13 @@ async function signOut(silent){
   if (token && !silent) { try { await call('logout', token); } catch(e){} }
   token = null; data = null; store.set(null);
   $('appView').classList.add('hidden'); $('loginView').classList.remove('hidden');
+  $('fab').classList.add('hidden'); closeModal();
   if (silent) $('loginErr').textContent = 'Your session expired. Please sign in again.';
 }
 async function startApp(){
   $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden');
   $('adminTabs').classList.toggle('hidden', PAGE !== 'admin');
+  $('fab').classList.toggle('hidden', PAGE !== 'admin');
   await reload();
 }
 async function reload(){
@@ -363,7 +365,42 @@ function renderEmployee(){
   });
 }
 
+// ---------- quick "+" task modal ----------
+function openNewTaskModal(preEmp){
+  const emps = activeEmployees();
+  if (!emps.length) { toast('Add an employee in the Team tab first.', true); currentTab = 'team'; render(); return; }
+  modal(`<h3>Assign a new task</h3>
+    <form id="qtForm">
+      <div class="field"><label>Task</label><input type="text" id="qtTask" maxlength="200" required placeholder="What needs to be done"></div>
+      <div class="field"><label>Details</label><textarea id="qtDetails" placeholder="Instructions, links, expected result"></textarea></div>
+      <div class="row">
+        <div class="field"><label>Employee</label><select id="qtEmp" required>${options(emps, emps.includes(preEmp) ? preEmp : (emps.length === 1 ? emps[0] : ''), 'Select employee')}</select></div>
+        <div class="field"><label>Priority</label><select id="qtPrio">${options(PRIORITIES, 'Medium')}</select></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Due date</label><input type="date" id="qtDue" min="${esc(data.today)}"></div>
+      </div>
+      <div class="field"><label class="switch"><input type="checkbox" id="qtApprove" checked> Approve now (sends it to the employee straight away)</label></div>
+      <div class="actions"><button class="btn ghost" type="button" id="qtCancel">Cancel</button><button class="btn" type="submit" id="qtBtn">Create task</button></div>
+    </form>`);
+  $('qtTask').focus();
+  $('qtCancel').onclick = closeModal;
+  $('qtForm').onsubmit = async e => {
+    e.preventDefault();
+    if (!$('qtEmp').value) { toast('Pick an employee.', true); return; }
+    $('qtBtn').disabled = true;
+    const who = $('qtEmp').value;
+    try {
+      data = await call('adminAddTask', token, { task:$('qtTask').value, details:$('qtDetails').value, assignee:who,
+        priority:$('qtPrio').value, due:$('qtDue').value, approveNow:$('qtApprove').checked });
+      closeModal(); render(); toast('Task created for ' + who);
+    } catch (err) { toast(err.message, true); $('qtBtn').disabled = false; }
+  };
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('ov')) closeModal(); });
+
 // ---------- boot ----------
+$('fab').onclick = () => openNewTaskModal(currentTab === 'tasks' ? filters.emp : '');
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; if (data) render(); });
 $('logoutBtn').onclick = () => signOut(false);
 $('refreshBtn').onclick = async () => {
