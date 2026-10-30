@@ -102,11 +102,7 @@
   @keyframes slide{from{background-position:-50% 0}to{background-position:150% 0}}
   .muted{color:var(--muted)}
   .switch{cursor:pointer}
-  @media (max-width:640px){
-    main{padding:14px}
-    .top-inner{height:auto;padding:10px 0;flex-wrap:wrap}
-    .hide-sm{display:none}
-  }
+  @media (max-width:640px){ html:not(.m) .hide-sm{display:none} }
 
   /* Floating add button */
   .fab{position:fixed;right:24px;bottom:24px;width:58px;height:58px;border-radius:50%;border:0;background:var(--brand);color:#fff;
@@ -116,3 +112,85 @@
   .fab:focus-visible{outline:3px solid rgba(44,79,138,.4);outline-offset:3px}
   #appView main{padding-bottom:96px}
   @media (max-width:640px){ .fab{right:16px;bottom:16px} }
+
+/* ===================== Phone layout (html.m, below 700px) ===================== */
+.btns{white-space:nowrap}
+.role-f{max-width:150px}
+.add-f{flex:0}
+.clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tasks-grid{grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr))}
+
+html.m body{font-size:14px}
+html.m input[type=text],html.m input[type=email],html.m input[type=password],html.m input[type=date],
+html.m select,html.m textarea{font-size:16px}               /* stops iPhone zooming into fields */
+html.m main{padding:12px 12px 96px}
+html.m header.top{padding:0 12px}
+html.m .top-inner{height:auto;min-height:54px;padding:8px 0;gap:8px}
+html.m .top h2{font-size:15px;line-height:1.25}
+html.m .top .sub{font-size:12px}
+html.m .top .btn.small{padding:5px 9px}
+html.m nav.tabs{padding:0 6px;scrollbar-width:none;position:sticky;top:0;z-index:12}
+html.m nav.tabs::-webkit-scrollbar{display:none}
+html.m .tab{padding:12px 9px 10px;font-size:13px}
+html.m .card{padding:14px;margin-bottom:12px}
+html.m .card h3{font-size:14px;margin-bottom:8px}
+
+/* number cards: 2 per row, smaller */
+html.m .stats{grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
+html.m .stat{padding:10px 12px}
+html.m .stat .n{font-size:21px}
+html.m .stat .l{font-size:11.5px}
+html.m .stat:last-child:nth-child(odd){grid-column:span 2}
+
+/* tables become stacked cards */
+html.m .table-wrap{overflow:visible}
+html.m table.rt,html.m table.rt tbody{display:block}
+html.m table.rt tr:first-child:has(th){display:none}
+html.m table.rt th{display:none}
+html.m table.rt tr{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:12px 0;border-bottom:1px solid var(--line)}
+html.m table.rt tr:last-child{border-bottom:0}
+html.m table.rt td{display:block;border:0;padding:0;font-size:13px}
+html.m table.rt td.primary{flex-basis:100%;order:-1}
+html.m table.rt td.tid{order:-2;font-size:11.5px;flex-basis:100%}
+html.m table.rt td.full{flex-basis:100%}
+html.m table.rt td.hide-sm{display:block}
+html.m table.rt td.hide-sm:empty{display:none}
+html.m table.rt td.num{text-align:left}
+html.m table.rt td[data-label]::before{content:attr(data-label) ": ";color:var(--muted);font-size:12px}
+html.m table.rt td.st{display:flex;align-items:center;gap:6px}
+html.m table.rt td.st .bar{margin-top:0;width:60px}
+html.m table.rt td.st .muted{display:none}
+html.m .muted-m{color:var(--muted);font-size:12.5px}
+html.m .t-sub{max-width:none}
+html.m .btns{white-space:normal;display:flex;flex-wrap:wrap;gap:6px}
+html.m .btns .btn{flex:1 1 auto}
+html.m tr.click:hover td{background:none}
+html.m tr.click:active{background:#f3f5f9}
+
+/* filters and form rows */
+html.m .row{gap:10px}
+html.m .row > .field{min-width:0;flex:1 1 calc(50% - 5px)}
+html.m .filters .search,html.m #ntForm .row > .field:first-child{flex-basis:100%}
+html.m .role-f{max-width:none}
+html.m .add-f{flex:1 1 100%}
+html.m .add-f .btn{width:100%}
+html.m .field{margin-bottom:10px}
+
+/* popups as bottom sheets */
+html.m .overlay{align-items:flex-end;padding:0}
+html.m .modal{max-width:none;border-radius:16px 16px 0 0;max-height:92vh;padding:18px 16px calc(16px + env(safe-area-inset-bottom))}
+html.m .modal .actions{flex-wrap:wrap}
+html.m .modal .actions .btn{flex:1 1 auto}
+html.m .modal .actions #etCancelTask{flex-basis:100%;margin-right:0;order:3}
+
+/* employee task cards */
+html.m .tasks-grid{gap:10px}
+html.m .tcard{padding:14px}
+html.m .seg button{padding:7px 11px}
+
+html.m .login{padding:24px 20px}
+html.m .fab{right:16px;bottom:calc(16px + env(safe-area-inset-bottom))}
+html.m .toast{left:12px;right:12px;transform:none;text-align:center;bottom:84px}
+
+/* ?phone=1 preview on desktop */
+html.phone-preview body{max-width:390px;margin:0 auto;box-shadow:0 0 0 1px #d0d5df;min-height:100vh}

@@ -3,6 +3,14 @@ const PAGE = ['admin','manager'].includes(window.PAGE) ? window.PAGE : 'employee
 const STAFF = PAGE !== 'employee';     // admin or task manager
 const IS_ADMIN = PAGE === 'admin';
 let BRAND = '';
+
+// Phone layout: .m on <html> below 700px. ?phone=1 previews it on a desktop browser.
+const PHONE_PREVIEW = /[?&]phone=1\b/.test(location.search);
+const mq = window.matchMedia('(max-width: 700px)');
+function setMobile(){ document.documentElement.classList.toggle('m', mq.matches || PHONE_PREVIEW); }
+setMobile();
+if (mq.addEventListener) mq.addEventListener('change', setMobile);
+if (PHONE_PREVIEW) document.documentElement.classList.add('phone-preview');
 const STATUSES = ['Not Started','In Progress','Blocked','Done'];
 const PRIORITIES = ['High','Medium','Low'];
 const APPROVALS = ['Pending','Approved','Rejected','On Hold','Cancelled'];
@@ -134,10 +142,10 @@ function render(){
 function renderOverview(){
   const s = data.stats;
   const rows = data.perEmployee.map(e => `<tr class="click" data-emp="${esc(e.name)}">
-    <td class="t-title">${esc(e.name)}</td><td class="num">${e.notStarted}</td><td class="num">${e.inProgress}</td>
-    <td class="num">${e.blocked ? `<span class="pill p-bad">${e.blocked}</span>` : 0}</td>
-    <td class="num">${e.overdue ? `<span class="overdue">${e.overdue}</span>` : 0}</td>
-    <td class="num">${e.done}</td><td class="num">${e.pending}</td></tr>`).join('');
+    <td class="t-title primary">${esc(e.name)}</td><td class="num" data-label="Not started">${e.notStarted}</td><td class="num" data-label="In progress">${e.inProgress}</td>
+    <td class="num" data-label="Blocked">${e.blocked ? `<span class="pill p-bad">${e.blocked}</span>` : 0}</td>
+    <td class="num" data-label="Overdue">${e.overdue ? `<span class="overdue">${e.overdue}</span>` : 0}</td>
+    <td class="num" data-label="Done">${e.done}</td><td class="num" data-label="Pending">${e.pending}</td></tr>`).join('');
   const attention = data.tasks.filter(t => t.overdue || (t.approval==='Approved' && t.status==='Blocked'));
   $('main').innerHTML = `
     <div class="stats">
@@ -147,7 +155,7 @@ function renderOverview(){
       <div class="stat bad"><div class="n">${s.blocked}</div><div class="l">Blocked</div></div>
       <div class="stat ok"><div class="n">${s.doneToday}</div><div class="l">Done in last 24h</div></div>
     </div>
-    <div class="card"><h3>By employee</h3><div class="table-wrap"><table>
+    <div class="card"><h3>By employee</h3><div class="table-wrap"><table class="rt">
       <tr><th>Employee</th><th>Not started</th><th>In progress</th><th>Blocked</th><th>Overdue</th><th>Done</th><th>Pending approval</th></tr>
       ${rows || '<tr><td colspan="7" class="empty">No active employees yet. Add them in the Team tab.</td></tr>'}
     </table></div></div>
@@ -158,17 +166,17 @@ function renderOverview(){
 
 function taskTable(list, emptyMsg){
   if (!list.length) return `<div class="empty">${esc(emptyMsg)}</div>`;
-  return `<div class="table-wrap"><table>
+  return `<div class="table-wrap"><table class="rt">
     <tr><th>ID</th><th>Task</th><th>Employee</th><th>Due</th><th>Priority</th><th>Approval</th><th>Status</th><th class="hide-sm">Remarks</th></tr>
     ${list.map(t => `<tr class="click" data-id="${esc(t.id)}">
-      <td class="muted">${esc(t.id)}</td>
-      <td><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub">${esc(t.details)}</div>` : ''}${addedBy(t)}</td>
-      <td>${esc(t.assignee)}</td>
-      <td class="${t.overdue ? 'overdue' : ''}">${esc(t.dueLabel || '-')}</td>
+      <td class="muted tid">${esc(t.id)}</td>
+      <td class="primary"><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub clamp">${esc(t.details)}</div>` : ''}${addedBy(t)}</td>
+      <td data-label="For">${esc(t.assignee)}</td>
+      <td data-label="Due" class="${t.overdue ? 'overdue' : ''}">${esc(t.dueLabel || '-')}</td>
       <td>${prioPill(t.priority)}</td>
       <td>${approvalPill(t.approval)}</td>
-      <td>${statusPill(t.status)}${t.approval==='Approved' ? bar(t.progress) : ''}</td>
-      <td class="hide-sm"><div class="t-sub">${esc(t.remarks)}</div></td>
+      <td class="st">${statusPill(t.status)}${t.approval==='Approved' ? bar(t.progress) : ''}</td>
+      <td class="hide-sm full">${t.remarks ? `<div class="t-sub">${esc(t.remarks)}</div>` : ''}</td>
     </tr>`).join('')}
   </table></div>`;
 }
@@ -185,8 +193,8 @@ function renderTasks(){
     (!q || (t.task + ' ' + t.details + ' ' + t.id + ' ' + t.remarks + ' ' + t.createdBy).toLowerCase().includes(q))
   ).reverse();
   $('main').innerHTML = `<div class="card">
-    <div class="row" style="margin-bottom:12px">
-      <div class="field"><label>Search</label><input type="text" id="fq" value="${esc(filters.q)}" placeholder="Task, ID, remark or who added it"></div>
+    <div class="row filters" style="margin-bottom:12px">
+      <div class="field search"><label>Search</label><input type="text" id="fq" value="${esc(filters.q)}" placeholder="Task, ID, remark or who added it"></div>
       <div class="field"><label>Employee</label><select id="femp">${options(emps, filters.emp, 'All employees')}</select></div>
       <div class="field"><label>Approval</label><select id="fapp">${options(APPROVALS, filters.approval, 'Any')}</select></div>
       <div class="field"><label>Status</label><select id="fst">${options(STATUSES.concat(['Overdue']), filters.status, 'Any')}</select></div>
@@ -205,13 +213,13 @@ function renderApprovals(){
   const list = data.tasks.filter(t => t.approval === 'Pending' || t.approval === 'On Hold');
   $('main').innerHTML = `<div class="card"><h3>Waiting for approval</h3>${
     !list.length ? '<div class="empty">Nothing waiting for approval.</div>' :
-    `<div class="table-wrap"><table>
+    `<div class="table-wrap"><table class="rt">
       <tr><th>ID</th><th>Task</th><th>Employee</th><th>Due</th><th>Priority</th><th>Approval</th><th></th></tr>
       ${list.map(t => `<tr>
-        <td class="muted">${esc(t.id)}</td>
-        <td><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub">${esc(t.details)}</div>` : ''}${addedBy(t)}</td>
-        <td>${esc(t.assignee)}</td><td>${esc(t.dueLabel || '-')}</td><td>${prioPill(t.priority)}</td><td>${approvalPill(t.approval)}</td>
-        <td style="white-space:nowrap">
+        <td class="muted tid">${esc(t.id)}</td>
+        <td class="primary"><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub">${esc(t.details)}</div>` : ''}${addedBy(t)}</td>
+        <td data-label="For">${esc(t.assignee)}</td><td data-label="Due">${esc(t.dueLabel || '-')}</td><td>${prioPill(t.priority)}</td><td>${approvalPill(t.approval)}</td>
+        <td class="btns full">
           <button class="btn ok small" data-act="Approved" data-send="1" data-id="${esc(t.id)}" title="Approve and email the employee now">Approve &amp; send now</button>
           <button class="btn ghost small" data-act="Approved" data-id="${esc(t.id)}" title="Approve; the employee sees it in tonight's summary">Approve</button>
           <button class="btn ghost small" data-act="On Hold" data-id="${esc(t.id)}">Hold</button>
@@ -264,10 +272,10 @@ function renderNewTask(){
 
 function renderTeam(){
   const rows = data.team.map(m => `<tr>
-    <td class="t-title">${esc(m.name)}</td><td>${esc(m.email)}</td><td>${esc(m.role)}</td>
+    <td class="t-title primary">${esc(m.name)}</td><td class="full muted-m">${esc(m.email)}</td><td>${esc(m.role)}</td>
     <td>${m.active ? '<span class="pill p-ok">Active</span>' : '<span class="pill p-grey">Inactive</span>'}</td>
-    <td>${m.role === 'Employee' ? (m.hasPin ? 'Set' : '<span class="muted">Not set</span>') : '-'}</td>
-    <td style="white-space:nowrap">
+    <td data-label="PIN">${m.role === 'Employee' ? (m.hasPin ? 'Set' : '<span class="muted">Not set</span>') : '-'}</td>
+    <td class="btns full">
       ${m.role === 'Employee' ? `<button class="btn ghost small" data-pin="${esc(m.name)}">${m.hasPin ? 'Reset PIN' : 'Create PIN'}</button>` : ''}
       <button class="btn ghost small" data-toggle="${esc(m.name)}" data-on="${m.active ? '0' : '1'}">${m.active ? 'Deactivate' : 'Activate'}</button>
       <button class="btn bad small" data-remove="${esc(m.name)}">Remove</button>
@@ -277,12 +285,12 @@ function renderTeam(){
       <form id="teForm"><div class="row">
         <div class="field"><label>Full name</label><input type="text" id="teName" maxlength="60" required></div>
         <div class="field"><label>Email</label><input type="email" id="teEmail" required></div>
-        <div class="field" style="max-width:150px"><label>Role</label><select id="teRole">${options(['Employee','Admin'],'Employee')}</select></div>
-        <div class="field" style="flex:0"><button class="btn" type="submit" id="teBtn">Add</button></div>
+        <div class="field role-f"><label>Role</label><select id="teRole">${options(['Employee','Admin'],'Employee')}</select></div>
+        <div class="field add-f"><button class="btn" type="submit" id="teBtn">Add</button></div>
       </div>
       <div class="muted">Employees get their own tab in the Employees sheet, edit access to it, and a login PIN for this dashboard.</div></form>
     </div>
-    <div class="card"><h3>Team</h3><div class="table-wrap"><table>
+    <div class="card"><h3>Team</h3><div class="table-wrap"><table class="rt">
       <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Dashboard PIN</th><th></th></tr>
       ${rows || '<tr><td colspan="6" class="empty">No team members yet.</td></tr>'}
     </table></div></div>`;
