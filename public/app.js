@@ -18,7 +18,22 @@ const LIMITS = [30, 45, 60];
 const DEFAULT_LIMIT = 45;
 
 let token = null, data = null, currentTab = 'overview';
-const filters = { q:'', emp:'', approval:'', status:'' };
+const filters = { q:'', emp:'', status:'' };   // status = stage name or 'Overdue'
+// One label per ticket for where it is right now (approval + employee status + review)
+const STAGES = ['Waiting for approval', 'Not Started', 'In Progress', 'Blocked', 'Awaiting review', 'Reviewed', 'On Hold', 'Rejected', 'Cancelled'];
+function stageOf(t){
+  if (t.approval === 'Pending' || !t.approval) return 'Waiting for approval';
+  if (t.approval !== 'Approved') return t.approval;                       // On Hold / Rejected / Cancelled
+  if (t.status === 'Done') return t.review === 'reviewed' ? 'Reviewed' : t.review === 'awaiting' ? 'Awaiting review' : 'Done';
+  return t.status || 'Not Started';
+}
+function stagePill(t){
+  const st = stageOf(t);
+  const cls = { 'Waiting for approval':'p-warn', 'Not Started':'p-grey', 'In Progress':'p-info', 'Blocked':'p-bad', 'Awaiting review':'p-warn',
+                'Reviewed':'p-ok', 'Done':'p-ok', 'On Hold':'p-grey', 'Rejected':'p-bad', 'Cancelled':'p-grey' }[st] || 'p-grey';
+  const title = st === 'Reviewed' ? `Reviewed by ${t.reviewedBy}${t.reviewedOn ? ', ' + t.reviewedOn : ''}` : st === 'Awaiting review' ? 'Done, waiting for a manager to review' : '';
+  return `<span class="pill ${cls}" ${title ? `title="${esc(title)}"` : ''}>${esc(st === 'Reviewed' ? 'Reviewed ✓' : st)}</span>`;
+}
 const store = {
   get(){ try{ return localStorage.getItem('tt_'+PAGE); }catch(e){ return null; } },
   set(v){ try{ v ? localStorage.setItem('tt_'+PAGE, v) : localStorage.removeItem('tt_'+PAGE); }catch(e){} }
@@ -198,15 +213,14 @@ function renderOverview(){
 function taskTable(list, emptyMsg){
   if (!list.length) return `<div class="empty">${esc(emptyMsg)}</div>`;
   return `<div class="table-wrap"><table class="rt">
-    <tr><th>ID</th><th>Task</th><th>Employee</th><th>Due</th><th>Priority</th><th>Approval</th><th>Status</th><th class="hide-sm">Remarks</th></tr>
+    <tr><th>ID</th><th>Task</th><th>Employee</th><th>Due</th><th>Priority</th><th>Stage</th><th class="hide-sm">Remarks</th></tr>
     ${list.map(t => `<tr class="click" data-id="${esc(t.id)}">
       <td class="muted tid">${esc(t.id)}</td>
       <td class="primary"><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub clamp">${esc(t.details)}</div>` : ''}${addedBy(t)}${linksHtml(t, true)}</td>
       <td data-label="For">${esc(t.assignee)}</td>
       <td data-label="Due" class="${t.overdue ? 'overdue' : ''}">${esc(dueText(t))}${countdownHtml(t)}</td>
       <td>${prioPill(t.priority)}</td>
-      <td>${approvalPill(t.approval)}${t.changeReq ? ' <span class="pill p-info">Change pending</span>' : ''}</td>
-      <td class="st">${statusPill(t.status)}${reviewPill(t)}${t.status === 'Done' ? takenHtml(t) : t.approval==='Approved' ? bar(t.progress) : ''}</td>
+      <td class="st" data-label="Stage">${stagePill(t)}${t.changeReq ? ' <span class="pill p-info">Change pending</span>' : ''}${t.status === 'Done' ? takenHtml(t) : t.approval==='Approved' ? bar(t.progress) : ''}</td>
       <td class="hide-sm full">${t.remarks ? `<div class="t-sub">${esc(t.remarks)}</div>` : ''}</td>
     </tr>`).join('')}
   </table></div>`;
@@ -286,24 +300,20 @@ function renderTasks(){
   const q = filters.q.toLowerCase();
   const list = data.tasks.filter(t =>
     (!filters.emp || t.assignee === filters.emp) &&
-    (!filters.approval || t.approval === filters.approval) &&
-    (!filters.status || (filters.status === 'Overdue' ? t.overdue : filters.status === 'Awaiting review' ? t.review === 'awaiting'
-      : filters.status === 'Reviewed' ? t.review === 'reviewed' : t.status === filters.status)) &&
+    (!filters.status || (filters.status === 'Overdue' ? t.overdue : stageOf(t) === filters.status)) &&
     (!q || (t.task + ' ' + t.details + ' ' + t.id + ' ' + t.remarks + ' ' + t.createdBy).toLowerCase().includes(q))
   ).reverse();
   $('main').innerHTML = `<div class="card">
     <div class="row filters" style="margin-bottom:12px">
       <div class="field search"><label>Search</label><input type="text" id="fq" value="${esc(filters.q)}" placeholder="Task, ID, remark or who added it"></div>
       <div class="field"><label>Employee</label><select id="femp">${options(emps, filters.emp, 'All employees')}</select></div>
-      <div class="field"><label>Approval</label><select id="fapp">${options(APPROVALS, filters.approval, 'Any')}</select></div>
-      <div class="field"><label>Status</label><select id="fst">${options(STATUSES.concat(['Overdue', 'Awaiting review', 'Reviewed']), filters.status, 'Any')}</select></div>
+      <div class="field"><label>Stage</label><select id="fst">${options(STAGES.concat(['Overdue']), filters.status, 'Any stage')}</select></div>
     </div>
     <div class="muted" style="margin-bottom:8px">${list.length} task(s). Click a task to edit it.</div>
     ${taskTable(list, 'No tasks match these filters.')}
   </div>`;
   $('fq').oninput = e => { filters.q = e.target.value; clearTimeout(renderTasks._t); renderTasks._t = setTimeout(() => { renderTasks(); const el=$('fq'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 250); };
   $('femp').onchange = e => { filters.emp = e.target.value; renderTasks(); };
-  $('fapp').onchange = e => { filters.approval = e.target.value; renderTasks(); };
   $('fst').onchange = e => { filters.status = e.target.value; renderTasks(); };
   bindTaskRows();
 }
@@ -349,11 +359,6 @@ function renderApprovals(){
   bindChangeButtons();
 }
 // ---------- manager review of Done tickets ----------
-function reviewPill(t){
-  if (t.review === 'awaiting') return ' <span class="pill p-warn" title="Done, waiting for a manager to review">Awaiting review</span>';
-  if (t.review === 'reviewed') return ` <span class="pill p-ok" title="Reviewed by ${esc(t.reviewedBy)}${t.reviewedOn ? ', ' + esc(t.reviewedOn) : ''}">Reviewed ✓</span>`;
-  return '';
-}
 /** The latest "sent back" note, shown to the employee on a reopened ticket. */
 function lastSentBack(t){
   const lines = String(t.reviewNotes || '').split('\n').filter(l => / sent back: /.test(l));
