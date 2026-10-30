@@ -63,7 +63,7 @@ function bar(p){ const v = Math.round((p||0)*100); return `<div class="muted" st
 function options(list, sel, blank){ return (blank !== undefined ? `<option value="">${esc(blank)}</option>` : '') + list.map(x => `<option ${x===sel?'selected':''}>${esc(x)}</option>`).join(''); }
 function modal(html){ $('modalRoot').innerHTML = `<div class="overlay" id="ov"><div class="modal">${html}</div></div>`;
   $('ov').addEventListener('click', e => { if (e.target.id === 'ov') closeModal(); }); }
-function closeModal(){ $('modalRoot').innerHTML = ''; }
+function closeModal(){ stopCamera(); $('modalRoot').innerHTML = ''; }
 
 // ---------- login ----------
 const PAGE_TITLE = { admin: 'Admin dashboard', manager: 'Task manager', employee: 'My tasks' };
@@ -117,7 +117,7 @@ async function startApp(){
   $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden');
   $('adminTabs').classList.toggle('hidden', !STAFF);
   $('fab').classList.toggle('hidden', !STAFF);
-  document.querySelectorAll('.tab[data-tab="approvals"], .tab[data-tab="team"]').forEach(b => b.classList.toggle('hidden', !IS_ADMIN));
+  document.querySelectorAll('.tab[data-tab="approvals"], .tab[data-tab="team"], .tab[data-tab="attendance"]').forEach(b => b.classList.toggle('hidden', !IS_ADMIN));
   await reload();
 }
 async function reload(){
@@ -136,13 +136,14 @@ function render(){
 }
 function renderInner(){
   if (STAFF) {
-    if (!IS_ADMIN && (currentTab === 'approvals' || currentTab === 'team')) currentTab = 'overview';
+    if (!IS_ADMIN && ['approvals','team','attendance'].includes(currentTab)) currentTab = 'overview';
     $('appTitle').textContent = (data.brand ? data.brand + ' ' : '') + (IS_ADMIN ? 'Admin dashboard' : 'Task manager · ' + (data.me || ''));
     $('appSub').textContent = data.stats.pending + ' waiting for approval · ' + data.stats.overdue + ' overdue';
     const waiting = data.stats.pending + (data.stats.changes || 0);
     const pc = $('pendingCount'); pc.textContent = waiting; pc.classList.toggle('hidden', !waiting);
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === currentTab));
-    ({overview:renderOverview, tasks:renderTasks, approvals:renderApprovals, newtask:renderNewTask, team:renderTeam})[currentTab]();
+    $('fab').classList.toggle('hidden', currentTab === 'attendance');
+    ({overview:renderOverview, tasks:renderTasks, approvals:renderApprovals, newtask:renderNewTask, team:renderTeam, attendance:renderAttendance})[currentTab]();
   } else {
     renderEmployee();
   }
@@ -581,6 +582,7 @@ function renderEmployee(){
   const order = t => (t.status === 'Done' ? 2 : 0) + (t.overdue ? -1 : 0);
   const list = data.tasks.slice().sort((a,b) => order(a) - order(b) || (a.dueAtMs || 9e15) - (b.dueAtMs || 9e15) || (a.due||'9999').localeCompare(b.due||'9999'));
   $('main').innerHTML = `
+    ${attendanceCard()}
     <div class="stats">
       <div class="stat"><div class="n">${open.length}</div><div class="l">Open tasks</div></div>
       <div class="stat bad"><div class="n">${overdue.length}</div><div class="l">Overdue</div></div>
@@ -608,6 +610,7 @@ function renderEmployee(){
         <button class="btn small" data-save>Save update</button>
         <div class="muted lock-note hidden" style="font-size:12px;margin-top:6px">Marking Done locks this ticket. It can't be changed after saving.</div>`}
       </div>`).join('')}</div>`}`;
+  bindAttendanceCard();
   document.querySelectorAll('[data-card]').forEach(card => {
     if (!card.querySelector('[data-save]')) return;   // Done tickets are read-only
     const task = data.tasks.find(t => t.id === card.dataset.card);
@@ -669,6 +672,178 @@ function addedMsg(who, sendNow){
   return 'Task added. ' + who + ' will see it in tonight\'s summary.';
 }
 
+// ---------- attendance (employee) ----------
+function attendanceCard(){
+  const a = data.attendance;
+  if (!a) return '';
+  let body, btn = '';
+  if (a.state === 'none') {
+    body = a.closed ? `<div class="att-big">Office hours are over for today</div><div class="muted">You did not check in today.</div>`
+      : `<div class="att-big">You haven't checked in yet</div><div class="muted">Office ${esc(a.officeStart)} – ${esc(a.officeEnd)} · late after ${esc(a.lateAfter)}</div>`;
+    if (!a.closed) btn = `<button class="btn ok att-btn" data-check="in">📷 Check in</button>`;
+  } else if (a.state === 'in') {
+    body = `<div class="att-big">Checked in at ${esc(a.inLabel)}${a.late ? ' <span class="pill p-warn">Late</span>' : ''}</div>
+      <div class="muted"><span data-worked="${a.inMs}" data-cap="${esc(a.autoOutLabel)}">${esc(fmtMins(a.workedMin))}</span> so far · auto check-out at ${esc(a.autoOutLabel)}</div>`;
+    btn = `<button class="btn bad att-btn" data-check="out">📷 Check out</button>`;
+  } else {
+    body = `<div class="att-big">Worked ${esc(fmtMins(a.workedMin))} today</div>
+      <div class="muted">In ${esc(a.inLabel)} · Out ${esc(a.outLabel)}${a.late ? ' · <span class="pill p-warn">Late</span>' : ''}${/Auto check-out/.test(a.flags) ? ' · auto checked out' : ''}</div>`;
+  }
+  return `<div class="card att-card att-${a.state}"><div class="att-info">${body}</div>${btn}</div>`;
+}
+function tickWorked(){
+  document.querySelectorAll('[data-worked]').forEach(el => {
+    const a = data && data.attendance; if (!a || a.state !== 'in') return;
+    el.textContent = fmtMins(Math.max(0, (Date.now() - Number(el.dataset.worked)) / 60000));
+  });
+}
+setInterval(tickWorked, 30000);
+function bindAttendanceCard(){
+  document.querySelectorAll('[data-check]').forEach(b => b.onclick = () => openCamera(b.dataset.check));
+}
+function getLocation(){
+  return new Promise(resolve => {
+    if (!navigator.geolocation) return resolve({ error: 'This browser cannot share location.' });
+    navigator.geolocation.getCurrentPosition(
+      p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }),
+      e => resolve({ error: e.code === 1 ? 'Location is blocked. Allow location for this site in your browser settings.' : 'Could not get your location. Try again near a window.' }),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  });
+}
+let camStream = null;
+function stopCamera(){ if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; } }
+async function openCamera(kind){
+  modal(`<h3>${kind === 'in' ? 'Check in' : 'Check out'}</h3>
+    <div class="cam-box"><video id="camVid" playsinline autoplay muted></video><img id="camShot" class="hidden" alt="Your photo"></div>
+    <div class="muted" id="camMsg" style="font-size:12.5px;margin:8px 0">Starting the camera… also getting your location.</div>
+    <div class="actions" style="justify-content:flex-end">
+      <button class="btn ghost" type="button" id="camCancel">Cancel</button>
+      <button class="btn ghost hidden" type="button" id="camRetake">Retake</button>
+      <button class="btn" type="button" id="camSnap" disabled>Take photo</button>
+      <button class="btn ok hidden" type="button" id="camSend">${kind === 'in' ? 'Check in' : 'Check out'}</button>
+    </div>`);
+  const close = () => { stopCamera(); closeModal(); };
+  $('camCancel').onclick = close;
+  const locP = getLocation();
+  let photo = '';
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } }, audio: false });
+    $('camVid').srcObject = camStream;
+    $('camSnap').disabled = false;
+    $('camMsg').textContent = 'Look at the camera and take a photo.';
+  } catch (e) {
+    $('camMsg').textContent = 'Camera is blocked or not available. Allow camera access for this site and try again.';
+    return;
+  }
+  $('camSnap').onclick = () => {
+    const v = $('camVid'); const w = v.videoWidth || 640, h = v.videoHeight || 480;
+    const scale = Math.min(1, 640 / Math.max(w, h));
+    const c = document.createElement('canvas'); c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+    const g = c.getContext('2d'); g.translate(c.width, 0); g.scale(-1, 1); g.drawImage(v, 0, 0, c.width, c.height);
+    photo = c.toDataURL('image/jpeg', 0.7);
+    $('camShot').src = photo; $('camShot').classList.remove('hidden'); v.classList.add('hidden');
+    ['camSnap'].forEach(id => $(id).classList.add('hidden')); ['camRetake','camSend'].forEach(id => $(id).classList.remove('hidden'));
+    $('camMsg').textContent = 'Happy with the photo?';
+  };
+  $('camRetake').onclick = () => {
+    photo = ''; $('camShot').classList.add('hidden'); $('camVid').classList.remove('hidden');
+    $('camSnap').classList.remove('hidden'); ['camRetake','camSend'].forEach(id => $(id).classList.add('hidden'));
+  };
+  $('camSend').onclick = async () => {
+    $('camSend').disabled = true; $('camRetake').disabled = true;
+    $('camMsg').textContent = 'Checking your location…';
+    const loc = await locP;
+    if (loc.error && data.attendance && data.attendance.needsLocation) {
+      $('camMsg').textContent = loc.error; $('camSend').disabled = false; $('camRetake').disabled = false; return;
+    }
+    try {
+      data = await call('empCheck', token, kind, photo, loc.lat, loc.lng, loc.acc);
+      close(); renderEmployee(); tickCountdowns();
+      toast(kind === 'in' ? 'Checked in at ' + data.attendance.inLabel : 'Checked out. Worked ' + fmtMins(data.attendance.workedMin) + ' today');
+    } catch (err) {
+      $('camMsg').textContent = err.message; $('camSend').disabled = false; $('camRetake').disabled = false;
+    }
+  };
+}
+
+// ---------- attendance (admin) ----------
+let att = null, attMonth = '';
+const photoCache = {};
+async function renderAttendance(){
+  if (!att || att._stale) {
+    $('main').innerHTML = '<div class="card empty">Loading attendance…</div>';
+    try { att = await call('adminAttendance', token, attMonth); } catch (err) { $('main').innerHTML = `<div class="card empty">${esc(err.message)}</div>`; return; }
+    if (currentTab !== 'attendance') return;
+  }
+  attMonth = att.month;
+  const o = att.office;
+  const present = att.todayRows.filter(r => !r.absent);
+  const inNow = att.todayRows.filter(r => r.open);
+  const monthLabel = new Date(att.month + '-01T00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  const notes = r => [r.late ? '<span class="pill p-warn">Late</span>' : '', r.flags ? `<span class="t-sub">${esc(r.flags)}</span>` : ''].join(' ');
+  const photoBtn = (id, label) => id ? `<button type="button" class="photo-chip" data-photo="${esc(id)}">${esc(label)}</button>` : '';
+  const months = []; { const d = new Date(); for (let i = 0; i < 6; i++) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); months.push(x.getFullYear() + '-' + pad2(x.getMonth() + 1)); } }
+  $('main').innerHTML = `
+    ${o.lat == null || !o.confirmed ? `<div class="card approvals-top"><h3>Set the office location</h3>
+      <p class="muted" style="margin:0 0 10px">${o.lat == null ? 'No office location saved yet, so check-ins are not location-checked.' : 'The saved office location has not been confirmed.'}
+      Open this page on your phone <b>inside the office</b> and tap the button. Check-ins then need to be within ${o.radius} m.</p>
+      <button class="btn" id="setOffice">📍 Use my current location as the office</button></div>` : ''}
+    <div class="stats">
+      <div class="stat ok"><div class="n">${inNow.length}</div><div class="l">In the office now</div></div>
+      <div class="stat"><div class="n">${present.length} / ${att.todayRows.length}</div><div class="l">Checked in today</div></div>
+      <div class="stat warn"><div class="n">${present.filter(r => r.late).length}</div><div class="l">Late today</div></div>
+      <div class="stat bad"><div class="n">${att.todayRows.filter(r => r.absent).length}</div><div class="l">Not checked in</div></div>
+    </div>
+    <div class="card"><h3>Today</h3><div class="table-wrap"><table class="rt">
+      <tr><th>Employee</th><th>In</th><th>Out</th><th>Worked</th><th>Photos</th><th>Notes</th></tr>
+      ${att.todayRows.map(r => r.absent ? `<tr><td class="primary t-title">${esc(r.name)}</td><td colspan="5" class="muted full">Not checked in</td></tr>` : `<tr>
+        <td class="primary t-title">${esc(r.name)} ${r.open ? '<span class="pill p-ok">In</span>' : ''}</td>
+        <td data-label="In">${esc(r.inLabel)}</td><td data-label="Out">${esc(r.outLabel || '-')}</td>
+        <td data-label="Worked">${esc(fmtMins(r.workedMin))}</td>
+        <td data-label="Photos">${photoBtn(r.inPhoto, 'In photo')} ${photoBtn(r.outPhoto, 'Out photo')}</td>
+        <td class="full">${notes(r)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No active employees.</td></tr>'}
+    </table></div></div>
+    <div class="card"><div class="row" style="align-items:flex-end;margin-bottom:10px">
+        <h3 style="margin:0;flex:1">Monthly report · ${esc(monthLabel)}</h3>
+        <div class="field" style="margin:0;max-width:180px"><label>Month</label><select id="attMonth">${months.map(m => `<option value="${m}" ${m === att.month ? 'selected' : ''}>${esc(new Date(m + '-01T00:00').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }))}</option>`).join('')}</select></div></div>
+      <div class="table-wrap"><table class="rt">
+      <tr><th>Employee</th><th>Days</th><th>Total hours</th><th>Avg / day</th><th>Late</th><th>Left early</th><th>Auto check-out</th></tr>
+      ${att.summary.map(r => `<tr><td class="primary t-title">${esc(r.name)}</td><td class="num" data-label="Days">${r.days}</td>
+        <td class="num" data-label="Total">${esc(fmtMins(r.totalMin))}</td><td class="num" data-label="Avg / day">${esc(fmtMins(r.avgMin))}</td>
+        <td class="num" data-label="Late">${r.late ? `<span class="pill p-warn">${r.late}</span>` : 0}</td>
+        <td class="num" data-label="Left early">${r.early}</td><td class="num" data-label="Auto out">${r.auto}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">No attendance this month.</td></tr>'}
+    </table></div>
+    <details style="margin-top:12px"><summary class="muted" style="cursor:pointer">Day by day (${att.monthRows.length})</summary>
+      <div class="table-wrap"><table class="rt">
+      <tr><th>Date</th><th>Employee</th><th>In</th><th>Out</th><th>Worked</th><th>Photos</th><th>Notes</th></tr>
+      ${att.monthRows.map(r => `<tr><td class="muted">${esc(new Date(r.date + 'T00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }))}</td>
+        <td class="primary t-title">${esc(r.name)}</td><td data-label="In">${esc(r.inLabel)}</td><td data-label="Out">${esc(r.outLabel || '-')}</td>
+        <td data-label="Worked">${esc(fmtMins(r.workedMin))}</td>
+        <td data-label="Photos">${r.photosDeleted ? '<span class="muted">Deleted</span>' : photoBtn(r.inPhoto, 'In') + ' ' + photoBtn(r.outPhoto, 'Out')}</td>
+        <td class="full">${notes(r)}</td></tr>`).join('')}
+      </table></div></details>
+    <div class="muted" style="font-size:12px;margin-top:10px">Office ${esc(o.hours)} · late after ${esc(o.lateAfter)} · auto check-out ${esc(o.autoOut)} · photos are deleted on the 15th of the next month.</div></div>`;
+  $('attMonth').onchange = async e => { attMonth = e.target.value; att._stale = true; renderAttendance(); };
+  document.querySelectorAll('[data-photo]').forEach(b => b.onclick = () => showPhoto(b.dataset.photo, b.closest('tr').querySelector('.t-title').textContent.trim()));
+  if ($('setOffice')) $('setOffice').onclick = async () => {
+    const loc = await getLocation();
+    if (loc.error) { toast(loc.error, true); return; }
+    if (loc.acc > 100) { toast('Location is not precise yet (±' + Math.round(loc.acc) + ' m). Try again near a window.', true); return; }
+    try { att = await call('adminSetOffice', token, loc.lat, loc.lng, loc.acc); toast('Office location saved'); renderAttendance(); }
+    catch (err) { toast(err.message, true); }
+  };
+}
+async function showPhoto(id, who){
+  modal(`<h3>${esc(who)}</h3><div class="cam-box"><div class="muted" id="phMsg" style="padding:40px;text-align:center">Loading photo…</div><img id="phImg" class="hidden" alt="Attendance photo"></div>
+    <div class="muted" id="phName" style="font-size:12px;margin-top:6px"></div>
+    <div class="actions" style="justify-content:flex-end"><button class="btn ghost" type="button" onclick="closeModal()">Close</button></div>`);
+  try {
+    const p = photoCache[id] || (photoCache[id] = await call('adminAttPhoto', token, id));
+    if (!$('phImg')) return;
+    $('phImg').src = p.dataUrl; $('phImg').classList.remove('hidden'); $('phMsg').remove(); $('phName').textContent = p.name;
+  } catch (err) { delete photoCache[id]; if ($('phMsg')) $('phMsg').textContent = err.message; }
+}
+
 // ---------- quick "+" task modal ----------
 function openNewTaskModal(preEmp){
   const emps = activeEmployees();
@@ -715,6 +890,7 @@ document.addEventListener('click', e => { if (e.target.closest && e.target.close
 async function quietRefresh(){
   if (!token || !data || document.visibilityState !== 'visible') return;
   if ($('ov') || dirty) return;                                  // popup open or unsaved edits on screen
+  if (STAFF && currentTab === 'attendance') return;              // attendance loads on its own
   const a = document.activeElement;
   if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest('#main')) return;
   try {
@@ -729,10 +905,10 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 
 // ---------- boot ----------
 $('fab').onclick = () => { if (data) openNewTaskModal(currentTab === 'tasks' ? filters.emp : ''); };
-document.querySelectorAll('.tab').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; if (data) render(); });
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; if (currentTab === 'attendance' && att) att._stale = true; if (data) render(); });
 $('logoutBtn').onclick = () => signOut(false);
 $('refreshBtn').onclick = async () => {
-  if (STAFF) { try { data = await call('adminSyncNow', token); render(); toast('Synced with the sheets'); } catch (err) { toast(err.message, true); } }
+  if (STAFF) { try { data = await call('adminSyncNow', token); if (att) att._stale = true; render(); toast('Synced with the sheets'); } catch (err) { toast(err.message, true); } }
   else reload();
 };
 setupLogin();

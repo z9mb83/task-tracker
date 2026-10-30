@@ -248,3 +248,17 @@ input[type=range]:disabled{opacity:.5}
 .link-add{display:flex;gap:6px}
 .link-add input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
 html.m .link-add input{font-size:16px}
+
+/* ---------- attendance ---------- */
+.att-card{display:flex;align-items:center;gap:16px;justify-content:space-between;border-left:4px solid var(--muted)}
+.att-card.att-in{border-left-color:var(--ok)} .att-card.att-out{border-left-color:var(--info)} .att-card.att-none{border-left-color:var(--warn)}
+.att-big{font-size:16px;font-weight:600;margin-bottom:3px}
+.att-btn{padding:12px 20px;font-size:15px;white-space:nowrap}
+.cam-box{background:#0d1220;border-radius:10px;overflow:hidden;aspect-ratio:1/1;max-height:60vh;display:flex;align-items:center;justify-content:center}
+.cam-box video,.cam-box img{width:100%;height:100%;object-fit:cover}
+.cam-box video{transform:scaleX(-1)}
+.cam-box .muted{color:#aab}
+.photo-chip{border:1px solid var(--line);background:#fff;border-radius:14px;padding:3px 10px;font-size:12px;cursor:pointer;color:var(--info);margin:2px 0}
+.photo-chip:hover{background:var(--info-bg)}
+html.m .att-card{flex-direction:column;align-items:stretch;text-align:left}
+html.m .att-btn{width:100%}

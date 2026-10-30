@@ -684,7 +684,9 @@ function empData(token) {
       return t;
     })
     .filter(t => t.status !== 'Done' || !t.completedMs || t.completedMs >= cutoff);
-  return { name: sess.name, brand: String(s['Company name'] || ''), today: dayKey_(new Date()), tasks: tasks };
+  let attendance = null;
+  try { attendance = attendanceToday_(sess.name); } catch (e) { Logger.log('Attendance read failed: ' + e); }
+  return { name: sess.name, brand: String(s['Company name'] || ''), today: dayKey_(new Date()), tasks: tasks, attendance: attendance };
 }
 
 function empUpdateTask(token, id, status, progress, remarks, links) {

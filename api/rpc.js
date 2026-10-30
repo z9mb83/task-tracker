@@ -19,7 +19,8 @@ const ALLOWED = new Set([
   'empData', 'empUpdateTask',
   'tmLogin',                    // handled here: PIN checked, then managerLogin in Apps Script
   'decisionInfo', 'decide',     // approve/reject links from the admin email (signed token)
-  'adminDecideChange', 'adminReopen'
+  'adminDecideChange', 'adminReopen',
+  'empCheck', 'adminAttendance', 'adminAttPhoto', 'adminSetOffice'   // attendance
 ]);
 
 function samePin(a, b) {
@@ -56,7 +57,9 @@ module.exports = async function handler(req, res) {
     callFn = 'managerLogin';
     callArgs = [String(args[0] || '').slice(0, 60), samePin(String(args[1] || '').trim(), pin)];
   }
-  if (JSON.stringify(args).length > 20000) return res.status(413).json({ ok: false, error: 'Request too large.' });
+  // Check-in/out carries a small selfie (~100 KB); everything else stays small.
+  const limit = fn === 'empCheck' ? 800000 : 20000;
+  if (JSON.stringify(args).length > limit) return res.status(413).json({ ok: false, error: 'Request too large.' });
 
   try {
     // Apps Script answers a POST with a redirect; fetch follows it and returns the JSON.

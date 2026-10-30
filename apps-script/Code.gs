@@ -84,11 +84,14 @@ function setup() {
   ScriptApp.newTrigger('onAdminEdit')
     .forSpreadsheet(SpreadsheetApp.getActive()).onEdit().create();
 
+  setUpAttendanceTriggers_();   // Attendance.gs: auto check-out 6:20 PM, photo cleanup
+
   refreshEmployeeTabs();
   syncNow();
   try {
     SpreadsheetApp.getUi().alert('Setup done.\n\nSync runs every ' + mins +
-      ' minutes and the daily email goes out at ' + hour + ':00 IST.');
+      ' minutes and the daily email goes out at ' + hour + ':00 IST.\n' +
+      'Attendance: open days are auto checked out each evening; photos are cleared on the 15th of the next month.');
   } catch (e) { /* no UI when run from the editor */ }
 }
 
@@ -349,6 +352,8 @@ function sendDailyEmails() {
     '<p><b>' + doneToday.length + '</b> done in last 24h &nbsp;|&nbsp; <b style="color:#c00000">' +
     overdue.length + '</b> overdue &nbsp;|&nbsp; <b>' + blocked.length + '</b> blocked &nbsp;|&nbsp; <b>' +
     pending.length + '</b> waiting for your approval</p>';
+
+  try { html += attendanceSummaryHtml_(); } catch (e) { Logger.log('Attendance summary failed: ' + e); }
 
   html += '<h3>By employee</h3>' + table_(
     ['Employee', 'Not Started', 'In Progress', 'Blocked', 'Overdue', 'Done (24h)'], perEmp);

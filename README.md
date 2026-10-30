@@ -46,6 +46,7 @@ tab (in the sheet or through the dashboard), and the script copies their updates
 |---|---|
 | `apps-script/Code.gs` | Sync between the two sheets, daily emails, sheet menu, employee tab setup and protection |
 | `apps-script/WebApp.gs` | Dashboard backend: logins, admin and employee actions |
+| `apps-script/Attendance.gs` | Check in / out with selfie + location, Attendance tab, auto check-out, photo cleanup |
 | `apps-script/Api.gs` | JSON API that the Vercel dashboard calls |
 | `apps-script/appsscript.json` | Project manifest (IST time zone, web app settings) |
 | `public/index.html` | "Sign in as" page (Admin / Task manager / Employee) |
@@ -116,7 +117,9 @@ If you change the env vars later, redeploy from the Vercel dashboard so they tak
 | Admin | Email, Overview (top card) or Approvals | Approve & send now, Approve (evening summary), Hold or Reject. |
 | Admin | Dashboard > Team | Add (PIN is emailed), deactivate, reset PIN, or remove people (deletes PIN, email and sheet access). |
 | Employee | `/employee` or their sheet tab | Set status, progress and remarks; see a live countdown. Done locks the ticket. |
-| Everyone | Email, daily at the hour in Settings | Open tasks and summary. |
+| Employee | `/employee`, top card | Check in / Check out with a selfie, at the office. Shows hours worked so far. |
+| Admin | Dashboard > Attendance | Who's in today (with photos), monthly hours, late / left early / auto check-out. |
+| Everyone | Email, daily at the hour in Settings | Open tasks and summary (admin summary includes attendance). |
 
 ## Settings you may want to change (Admin sheet > Settings)
 
@@ -127,6 +130,10 @@ If you change the env vars later, redeploy from the Vercel dashboard so they tak
 | Approval emails | Who gets task-manager approval requests |
 | Sender name | Name shown on every email |
 | Dashboard URL | Your Vercel link, used in emails |
+| Office latitude / longitude | Set from Dashboard > Attendance > Use my current location (stand in the office) |
+| Office radius (m) | How close a check-in must be (default 150) |
+| Location check | Block (default) or Flag only |
+| Office start / end, Buffer (min) | 10:00 / 18:00 / 20: late after 10:20, left early before 5:40, auto check-out 6:20 PM |
 
 ## Notes
 
@@ -144,3 +151,13 @@ npm test
 
 The tests run the real dashboard code in a headless DOM against a mock Apps Script (including Google's
 POST-then-redirect behaviour), and check the due-time and time-taken calculations from `Code.gs`.
+
+## Attendance
+
+- Employees check in and out from the top of `/employee`. The phone's camera takes a selfie and the
+  location must be within the office radius. Allow camera and location for the site when asked.
+- Photos are saved in Google Drive: **Task Tracker Attendance / Employee / yyyy-MM** (private to the owner).
+  Admins see them in the dashboard. Each month's photos go to Drive's trash on the **15th of the next month**
+  (October photos on 15 November); the Attendance tab keeps the times and marks the photos "Deleted".
+- Late = check-in after 10:20. Left early = check-out before 5:40. Anyone not checked out by 6:20 PM is
+  auto checked out at 6:20 PM (flagged). Check-in is closed after 6:20 PM.
