@@ -162,6 +162,7 @@ function syncNow() {
       const id = r[C.ID - 1];
       const who = r[C.ASSIGNEE - 1];
       if (!id || !who || !empData[who] || !empData[who][id]) return;
+      if (r[C.STATUS - 1] === 'Done') return;   // Done tickets are locked
       const u = empData[who][id];
       const changed = u.status !== r[C.STATUS - 1] ||
                       !sameNum_(u.progress, r[C.PROGRESS - 1]) ||
@@ -205,7 +206,7 @@ function syncNow() {
         .filter(r => r[C.STATUS - 1] !== 'Done' || !r[C.COMPLETED - 1] || r[C.COMPLETED - 1] >= cutoff)
         .map(r => {
           const id = r[C.ID - 1];
-          const cur = current[id];
+          const cur = r[C.STATUS - 1] === 'Done' ? null : current[id];   // locked: always show the final values
           const limit = limitVal_(r[T.LIMIT - 1]);
           return [id, r[C.TASK - 1] + (limit ? ' (' + limit + ' min)' : ''), r[C.DETAILS - 1], r[C.PRIORITY - 1],
                   r[T.DUE_AT - 1] instanceof Date ? r[T.DUE_AT - 1] : r[C.DUE - 1],

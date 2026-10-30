@@ -433,7 +433,7 @@ function empData(token) {
   const tasks = readTasksForWeb_()
     .filter(t => t.assignee === sess.name && t.approval === 'Approved')
     .map(t => {
-      const l = live[t.id];
+      const l = t.status === 'Done' ? null : live[t.id];   // Done tickets are locked
       if (l) { t.status = l.status; t.progress = typeof l.progress === 'number' ? l.progress : t.progress; t.remarks = l.remarks; }
       return t;
     })
@@ -450,6 +450,8 @@ function empUpdateTask(token, id, status, progress, remarks) {
   p = Math.max(0, Math.min(1, p));
   if (status === 'Done') p = 1;
 
+  const master = readTasksForWeb_().find(x => x.id === id && x.assignee === sess.name);
+  if (master && master.status === 'Done') throw new Error('This ticket is already Done and locked.');
   const s = getSettings_();
   const tab = SpreadsheetApp.openById(s['Employee sheet ID']).getSheetByName(sess.name);
   if (!tab) throw new Error('Your task tab was not found. Ask the admin to run a sync.');

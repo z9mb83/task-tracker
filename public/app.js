@@ -491,19 +491,27 @@ function renderEmployee(){
         ${t.details ? `<div class="t-sub" style="margin-top:4px">${esc(t.details)}</div>` : ''}
         <div class="meta"><span>${esc(t.id)}</span>${prioPill(t.priority)}
           <span class="${t.overdue ? 'overdue' : ''}">${t.dueLabel ? 'Due ' + esc(dueText(t)) : 'No due date'}</span>${countdownHtml(t)}${takenHtml(t)}</div>
+        ${t.status === 'Done' ? `
+        <div class="done-lock"><span class="pill p-ok">Done</span><span class="muted">${t.completed ? 'Completed ' + esc(t.completed) + ' · ' : ''}locked</span></div>
+        ${t.remarks ? `<div class="t-sub" style="margin-top:8px;max-width:none"><b>Remarks:</b> ${esc(t.remarks)}</div>` : ''}` : `
         <div class="seg">${STATUSES.map(s => `<button type="button" data-st="${esc(s)}" class="${s===t.status?'on':''}">${esc(s)}</button>`).join('')}</div>
         <div class="field"><label>Progress: <span data-pv>${Math.round(t.progress*100)}</span>%</label>
           <input type="range" min="0" max="100" step="10" value="${Math.round(t.progress*100)}" data-pr></div>
         <div class="field"><label>Remarks</label><textarea data-rm placeholder="What's done, what's blocking you">${esc(t.remarks)}</textarea></div>
         <button class="btn small" data-save>Save update</button>
+        <div class="muted lock-note hidden" style="font-size:12px;margin-top:6px">Marking Done locks this ticket. It can't be changed after saving.</div>`}
       </div>`).join('')}</div>`}`;
   document.querySelectorAll('[data-card]').forEach(card => {
+    if (!card.querySelector('[data-save]')) return;   // Done tickets are read-only
     let status = data.tasks.find(t => t.id === card.dataset.card).status || 'Not Started';
     const pr = card.querySelector('[data-pr]'), pv = card.querySelector('[data-pv]');
     card.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
       status = b.dataset.st;
       card.querySelectorAll('[data-st]').forEach(x => x.classList.toggle('on', x === b));
       if (status === 'Done') { pr.value = 100; pv.textContent = 100; }
+      pr.disabled = status === 'Done';
+      card.querySelector('[data-save]').textContent = status === 'Done' ? 'Save & mark Done' : 'Save update';
+      card.querySelector('.lock-note').classList.toggle('hidden', status !== 'Done');
     });
     pr.oninput = () => pv.textContent = pr.value;
     card.querySelector('[data-save]').onclick = async e => {
