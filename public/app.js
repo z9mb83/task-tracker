@@ -153,9 +153,14 @@ function renderOverview(){
     <td class="num" data-label="Overdue">${e.overdue ? `<span class="overdue">${e.overdue}</span>` : 0}</td>
     <td class="num" data-label="Done">${e.done}</td><td class="num" data-label="Pending">${e.pending}</td></tr>`).join('');
   const attention = data.tasks.filter(t => t.overdue || (t.approval==='Approved' && t.status==='Blocked'));
+  const pending = IS_ADMIN ? data.tasks.filter(t => t.approval === 'Pending') : [];
   $('main').innerHTML = `
+    ${pending.length ? `<div class="card approvals-top">
+      <h3>Waiting for your approval <span class="count-pill">${pending.length}</span></h3>
+      ${approvalsTable(pending)}
+    </div>` : ''}
     <div class="stats">
-      <div class="stat warn"><div class="n">${s.pending}</div><div class="l">Waiting for approval</div></div>
+      <div class="stat warn ${IS_ADMIN ? 'click' : ''}" ${IS_ADMIN ? 'data-goto="approvals" title="Open Approvals"' : ''}><div class="n">${s.pending}</div><div class="l">Waiting for approval</div></div>
       <div class="stat"><div class="n">${s.open}</div><div class="l">Open tasks</div></div>
       <div class="stat bad"><div class="n">${s.overdue}</div><div class="l">Overdue</div></div>
       <div class="stat bad"><div class="n">${s.blocked}</div><div class="l">Blocked</div></div>
@@ -167,7 +172,9 @@ function renderOverview(){
     </table></div></div>
     <div class="card"><h3>Needs attention</h3>${taskTable(attention, 'Nothing overdue or blocked.')}</div>`;
   document.querySelectorAll('tr[data-emp]').forEach(tr => tr.onclick = () => { filters.emp = tr.dataset.emp; currentTab = 'tasks'; render(); });
+  document.querySelectorAll('[data-goto]').forEach(el => el.onclick = () => { currentTab = el.dataset.goto; render(); window.scrollTo(0, 0); });
   bindTaskRows();
+  bindApprovalButtons();
 }
 
 function taskTable(list, emptyMsg){
@@ -268,33 +275,41 @@ function renderTasks(){
   bindTaskRows();
 }
 
-function renderApprovals(){
-  const list = data.tasks.filter(t => t.approval === 'Pending' || t.approval === 'On Hold');
-  $('main').innerHTML = `<div class="card"><h3>Waiting for approval</h3>${
-    !list.length ? '<div class="empty">Nothing waiting for approval.</div>' :
-    `<div class="table-wrap"><table class="rt">
+/** Approve / Hold / Reject table, shared by the Overview card and the Approvals tab. */
+function approvalsTable(list){
+  return `<div class="table-wrap"><table class="rt">
       <tr><th>ID</th><th>Task</th><th>Employee</th><th>Due</th><th>Priority</th><th>Approval</th><th></th></tr>
       ${list.map(t => `<tr>
         <td class="muted tid">${esc(t.id)}</td>
-        <td class="primary"><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub">${esc(t.details)}</div>` : ''}${addedBy(t)}</td>
+        <td class="primary"><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub clamp">${esc(t.details)}</div>` : ''}${addedBy(t)}</td>
         <td data-label="For">${esc(t.assignee)}</td><td data-label="Due">${esc(dueText(t))}</td><td>${prioPill(t.priority)}</td><td>${approvalPill(t.approval)}</td>
         <td class="btns full">
           <button class="btn ok small" data-act="Approved" data-send="1" data-id="${esc(t.id)}" title="Approve and email the employee now">Approve &amp; send now</button>
           <button class="btn ghost small" data-act="Approved" data-id="${esc(t.id)}" title="Approve; the employee sees it in tonight's summary">Approve</button>
-          <button class="btn ghost small" data-act="On Hold" data-id="${esc(t.id)}">Hold</button>
+          ${t.approval !== 'On Hold' ? `<button class="btn ghost small" data-act="On Hold" data-id="${esc(t.id)}">Hold</button>` : ''}
           <button class="btn bad small" data-act="Rejected" data-id="${esc(t.id)}">Reject</button>
         </td></tr>`).join('')}
-    </table></div>`}</div>`;
+    </table></div>`;
+}
+function bindApprovalButtons(){
   document.querySelectorAll('button[data-act]').forEach(b => b.onclick = async () => {
-    b.disabled = true;
+    document.querySelectorAll(`button[data-act][data-id="${b.dataset.id}"]`).forEach(x => x.disabled = true);
     const sendNow = b.dataset.send === '1';
     try {
       data = await call('adminUpdateTask', token, b.dataset.id, { approval: b.dataset.act, sendNow });
       toast(b.dataset.id + ': ' + b.dataset.act + (sendNow ? (data.emailed ? ', emailed to employee' : ', but the email could not be sent') : b.dataset.act === 'Approved' ? ', in tonight\'s summary' : ''));
       render();
+    } catch (err) {
+      toast(err.message, true);
+      document.querySelectorAll(`button[data-act][data-id="${b.dataset.id}"]`).forEach(x => x.disabled = false);
     }
-    catch (err) { toast(err.message, true); b.disabled = false; }
   });
+}
+function renderApprovals(){
+  const list = data.tasks.filter(t => t.approval === 'Pending' || t.approval === 'On Hold');
+  $('main').innerHTML = `<div class="card"><h3>Waiting for approval</h3>${
+    !list.length ? '<div class="empty">Nothing waiting for approval.</div>' : approvalsTable(list)}</div>`;
+  bindApprovalButtons();
 }
 
 function activeEmployees(){ return data.team.filter(m => m.role === 'Employee' && m.active).map(m => m.name); }

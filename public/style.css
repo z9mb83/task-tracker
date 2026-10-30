@@ -211,3 +211,12 @@ html.m td .cd{display:inline-block;margin:0 0 0 6px}
 html.m .time-row > .field{flex:1 1 calc(33% - 8px)}
 html.m .time-row > .field:first-child{flex-basis:100%}
 input[type=date],input[type=time]{min-height:40px}
+
+/* approvals on the landing page */
+.approvals-top{border:1px solid #f1d9a6;box-shadow:0 0 0 3px var(--warn-bg),var(--shadow)}
+.approvals-top h3{display:flex;align-items:center;gap:8px;color:var(--warn)}
+.count-pill{background:var(--warn);color:#fff;border-radius:12px;font-size:12px;padding:1px 8px;line-height:18px}
+.stat.click{cursor:pointer;transition:transform .15s}
+.stat.click:hover{transform:translateY(-1px)}
+.tab:focus{outline:none}
+.tab:focus-visible{outline:2px solid rgba(44,79,138,.4);outline-offset:-4px;border-radius:6px}
