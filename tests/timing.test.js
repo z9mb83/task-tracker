@@ -8,7 +8,9 @@ const Utilities = {
     let h = x.getUTCHours(); const ap = h < 12 ? 'AM' : 'PM'; h = h % 12 || 12;
     return pad(x.getUTCDate()) + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][x.getUTCMonth()] + (fmt.includes('h:mm a') ? ', ' + h + ':' + pad(x.getUTCMinutes()) + ' ' + ap : ' ' + x.getUTCFullYear()); }
 };
-const ctx = { Utilities, console, Date, Math, Number, String, Logger: { log(){} } };
+const props = {};
+const PropertiesService = { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) };
+const ctx = { Utilities, PropertiesService, JSON, console, Date, Math, Number, String, Logger: { log(){} } };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(require('path').resolve(__dirname, '../apps-script/Code.gs'), 'utf8') + '\nthis.__x = { computeDueAt_, minutesTaken_, normStart_, fmtDue_, C, T };', ctx);
 const { computeDueAt_, minutesTaken_, normStart_, fmtDue_, C, T } = ctx.__x;
@@ -27,4 +29,14 @@ row[T.STARTED_AT-1] = '';
 out.push('never pressed In Progress, done 11:40 -> taken from scheduled start: ' + minutesTaken_(row));
 row[C.COMPLETED-1] = new Date(due.getTime() + 20*60000);
 out.push('done 12:05 (over) -> taken: ' + minutesTaken_(row));
+// Reopen: worked 6 min first time, reopened 2:37 PM, done again 3:06 PM -> 6 + 29 = 35 (idle time not counted)
+const at = (h, m) => new Date(Date.UTC(2026, 9, 30, h, m) - IST);
+const r2 = new Array(23).fill(''); r2[C.ID-1] = 'T-0002'; r2[T.LIMIT-1] = 45;
+r2[T.DUE_AT-1] = at(14, 0); r2[T.STARTED_AT-1] = at(14, 31); r2[C.COMPLETED-1] = at(14, 37);
+out.push('first finish (started 2:31, done 2:37): ' + minutesTaken_(r2));
+props['REOPEN_T-0002'] = JSON.stringify({ min: 6, at: at(14, 37).getTime() });
+r2[T.STARTED_AT-1] = at(14, 37); r2[C.COMPLETED-1] = at(15, 6);
+out.push('after reopen, done 3:06: ' + minutesTaken_(r2) + ' (expected 35)');
+r2[T.STARTED_AT-1] = '';   // employee set Not Started after the reopen, then Done
+out.push('reopen, no start pressed, done 3:06: ' + minutesTaken_(r2) + ' (expected 35)');
 console.log(out.join('\n'));

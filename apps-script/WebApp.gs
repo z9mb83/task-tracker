@@ -467,9 +467,14 @@ function adminReopen(token, id) {
   const when = Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy, h:mm a');
   const log = String(v[T.REOPENED - 1] || '');
   sh.getRange(row, T.REOPENED).setNumberFormat('@').setValue((log ? log + '; ' : '') + 'Reopened by Admin ' + when);
+  // Remember the time worked so far; after the rework, Time Taken = this + the rework only
+  const workedSoFar = typeof v[T.TAKEN - 1] === 'number' ? v[T.TAKEN - 1] : (Number(minutesTaken_(v)) || 0);
+  const now = new Date();
+  PropertiesService.getScriptProperties().setProperty('REOPEN_' + id, JSON.stringify({ min: workedSoFar, at: now.getTime() }));
   sh.getRange(row, C.STATUS).setValue('In Progress');
   sh.getRange(row, C.COMPLETED).setValue('');
   sh.getRange(row, T.TAKEN).setValue('');
+  sh.getRange(row, T.STARTED_AT).setValue(now);   // rework clock starts at the reopen
   // The employee tab still says Done; switch it back so the next sync doesn't re-close the task
   const tab = SpreadsheetApp.openById(getSettings_()['Employee sheet ID']).getSheetByName(String(v[C.ASSIGNEE - 1]));
   if (tab && tab.getLastRow() > 1) {

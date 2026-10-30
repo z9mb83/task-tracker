@@ -560,16 +560,30 @@ function computeDueAt_(day, start, limit) {
   return new Date(startAt.getTime() + (limitVal_(limit) || DEFAULT_LIMIT) * 60000);
 }
 
-/** Minutes from start to completion: actual start if the employee pressed In Progress, else the scheduled start. */
+/**
+ * Minutes worked on a ticket. Counts from the actual start (when the employee pressed
+ * In Progress), else the scheduled start. After an admin Reopen, it is the time worked
+ * before the reopen plus only the rework since reopening (idle time in between is not counted).
+ */
 function minutesTaken_(r) {
   const done = r[C.COMPLETED - 1];
   if (!(done instanceof Date)) return '';
+  const prior = reopenCarry_(r[C.ID - 1]);   // { min, at } saved when the task was reopened
   let from = r[T.STARTED_AT - 1];
+  if (prior && !(from instanceof Date)) from = new Date(prior.at);
   if (!(from instanceof Date) && r[T.DUE_AT - 1] instanceof Date) {
     from = new Date(r[T.DUE_AT - 1].getTime() - (limitVal_(r[T.LIMIT - 1]) || DEFAULT_LIMIT) * 60000);
   }
-  if (!(from instanceof Date) || done < from) return '';
-  return Math.max(1, Math.round((done - from) / 60000));
+  const base = prior ? prior.min : 0;
+  if (!(from instanceof Date) || done < from) return base || '';
+  return base + Math.max(1, Math.round((done - from) / 60000));
+}
+
+/** Time already worked before the latest reopen (kept in Script Properties, one entry per task). */
+function reopenCarry_(id) {
+  if (!id) return null;
+  const v = PropertiesService.getScriptProperties().getProperty('REOPEN_' + id);
+  try { const o = v ? JSON.parse(v) : null; return o && typeof o.min === 'number' ? o : null; } catch (e) { return null; }
 }
 
 function fmtDue_(dueAt, day) {
