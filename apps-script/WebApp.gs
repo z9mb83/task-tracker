@@ -682,7 +682,7 @@ function empData(token) {
   return { name: sess.name, brand: String(s['Company name'] || ''), today: dayKey_(new Date()), tasks: tasks };
 }
 
-function empUpdateTask(token, id, status, progress, remarks) {
+function empUpdateTask(token, id, status, progress, remarks, links) {
   const sess = requireSession_(token, 'employee');
   if (!STATUSES.includes(status)) throw new Error('Pick a valid status.');
   let p = Number(progress);
@@ -693,6 +693,7 @@ function empUpdateTask(token, id, status, progress, remarks) {
 
   const master = readTasksForWeb_().find(x => x.id === id && x.assignee === sess.name);
   if (master && master.status === 'Done') throw new Error('This ticket is already Done and locked.');
+  const cleanLinks = cleanLinks_(links);   // null = not sent (older page)
   const s = getSettings_();
   const tab = SpreadsheetApp.openById(s['Employee sheet ID']).getSheetByName(sess.name);
   if (!tab) throw new Error('Your task tab was not found. Ask the admin to run a sync.');
@@ -702,6 +703,11 @@ function empUpdateTask(token, id, status, progress, remarks) {
   const idx = ids.indexOf(id);
   if (idx < 0) throw new Error('Task not found on your list. It may have been reassigned.');
   tab.getRange(idx + 2, E.STATUS, 1, 3).setValues([[status, p, String(remarks || '').slice(0, 2000)]]);
+  if (cleanLinks) {
+    const sh = tasksSheet_();
+    const row = findTaskRow_(sh, id);
+    if (row) sh.getRange(row, T.LINKS).setNumberFormat('@').setValue(cleanLinks.join('\n'));
+  }
   syncNow();
   return empData(token);
 }
@@ -793,6 +799,7 @@ function readTasksForWeb_() {
         createdBy: String(r[T.CREATED_BY - 1] || ''),
         changeReq: (function (req) { return req ? { by: req.by, at: req.at, cancel: !!req.cancel, lines: changeLines_(req) } : null; })(readChangeReq_(r[T.CHANGE_REQ - 1])),
         reopened: String(r[T.REOPENED - 1] || ''),
+        links: parseLinks_(r[T.LINKS - 1]),
         state: taskState_(approval, status)
       };
     });

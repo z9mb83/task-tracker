@@ -27,6 +27,7 @@
 | T | Time Taken (min) | Script: Done time minus Started At (or the scheduled start) |
 | U | Change Request | Script: pending change/cancel request from a task manager (JSON) |
 | V | Reopened | Script: log of admin reopens |
+| W | Links | Employee, via dashboard: work links (Drive, Canva, screenshots), one per line |
 
 ### Team
 | Col | Header | Values |

@@ -27,10 +27,11 @@ const C = {
 };
 const ADMIN_COLS = 14;
 // Ticket timing columns (added after Created By in column O)
-const T = { CREATED_BY: 15, START: 16, LIMIT: 17, DUE_AT: 18, STARTED_AT: 19, TAKEN: 20, CHANGE_REQ: 21, REOPENED: 22 };
-const ALL_COLS = 22;
+const T = { CREATED_BY: 15, START: 16, LIMIT: 17, DUE_AT: 18, STARTED_AT: 19, TAKEN: 20, CHANGE_REQ: 21, REOPENED: 22, LINKS: 23 };
+const ALL_COLS = 23;
 const TASK_HEADERS_EXTRA = ['Created By', 'Start Time', 'Time Limit (min)', 'Due At', 'Started At', 'Time Taken (min)',
-                            'Change Request', 'Reopened'];
+                            'Change Request', 'Reopened', 'Links'];
+const MAX_LINKS = 10;
 // Columns that are frozen once a task is Done, Rejected or Cancelled
 const LOCKED_COLS = [C.TASK, C.DETAILS, C.ASSIGNEE, C.PRIORITY, C.DUE, C.APPROVAL, T.START, T.LIMIT];
 const LIMITS = [30, 45, 60];
@@ -361,9 +362,10 @@ function sendDailyEmails() {
     ['ID', 'Task', 'Assigned To', 'Remarks'],
     blocked.map(t => [t.id, t.task, t.assignee, t.remarks]));
   if (doneToday.length) html += '<h3>Completed in the last 24 hours</h3>' + table_(
-    ['ID', 'Task', 'Assigned To', 'Completed', 'Time taken'],
+    ['ID', 'Task', 'Assigned To', 'Completed', 'Time taken', 'Links'],
     doneToday.map(t => [t.id, t.task, t.assignee, Utilities.formatDate(t.completed, TZ, 'dd MMM, hh:mm a'),
-      t.taken !== '' && t.taken != null ? t.taken + ' min' + (t.limit ? ' / ' + t.limit : '') : '']));
+      t.taken !== '' && t.taken != null ? t.taken + ' min' + (t.limit ? ' / ' + t.limit : '') : '',
+      { html: t.links.map((u, i) => '<a href="' + esc_(u) + '">Link ' + (i + 1) + '</a>').join(' ') }]));
   html += '<p><a href="' + adminUrl + '">Open the admin sheet</a></p>';
 
   sendMail_({ to: to, subject: brand + 'Daily task summary, ' + dateLabel, htmlBody: wrap_(html) });
@@ -505,7 +507,8 @@ function getAdminTasks_() {
       due: r[C.DUE - 1], approval: r[C.APPROVAL - 1], status: r[C.STATUS - 1],
       progress: r[C.PROGRESS - 1], remarks: r[C.REMARKS - 1], completed: r[C.COMPLETED - 1],
       approvedOn: r[C.APPROVED_ON - 1], createdBy: r[T.CREATED_BY - 1] || '',
-      dueAt: r[T.DUE_AT - 1], limit: limitVal_(r[T.LIMIT - 1]), taken: typeof r[T.TAKEN - 1] === 'number' ? r[T.TAKEN - 1] : ''
+      dueAt: r[T.DUE_AT - 1], limit: limitVal_(r[T.LIMIT - 1]), taken: typeof r[T.TAKEN - 1] === 'number' ? r[T.TAKEN - 1] : '',
+      links: parseLinks_(r[T.LINKS - 1])
     }));
 }
 
@@ -520,7 +523,7 @@ function ensureTaskCols_(sh) {
     sh.getRange(2, T.LIMIT, n, 1).setNumberFormat('0');               // minutes
     sh.getRange(2, T.DUE_AT, n, 2).setNumberFormat('dd-mmm h:mm am/pm');
     sh.getRange(2, T.TAKEN, n, 1).setNumberFormat('0');
-    sh.getRange(2, T.CHANGE_REQ, n, 2).setNumberFormat('@');
+    sh.getRange(2, T.CHANGE_REQ, n, 3).setNumberFormat('@');
   }
   const hdr = sh.getRange(1, T.CREATED_BY, 1, TASK_HEADERS_EXTRA.length);
   const cur = hdr.getValues()[0];
@@ -588,6 +591,25 @@ function upgradeEmpTab_(sh) {
   ]);
 }
 
+// ---------- Work links ----------
+/** Links cell (one URL per line) -> array of http(s) URLs. */
+function parseLinks_(v) {
+  return String(v || '').split(/\s*\n\s*/).map(x => x.trim()).filter(x => /^https?:\/\/\S+$/i.test(x));
+}
+/** Cleans links sent from the dashboard. */
+function cleanLinks_(list) {
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  list.forEach(u => {
+    u = String(u || '').trim();
+    if (!u) return;
+    if (!/^https?:\/\/\S+$/i.test(u) || u.length > 500) throw new Error('Not a valid link: ' + u.slice(0, 60));
+    if (!out.includes(u)) out.push(u);
+  });
+  if (out.length > MAX_LINKS) throw new Error('Up to ' + MAX_LINKS + ' links per task.');
+  return out;
+}
+
 // ---------- Small utilities ----------
 /** All emails go through here so they show the sender name from Settings ("Task Tracker" by default). */
 function sendMail_(opts) {
@@ -621,7 +643,7 @@ function table_(headers, rows, redRows) {
   rows.forEach((r, i) => {
     const color = redRows && redRows[i] ? 'color:#c00000;' : '';
     h += '<tr>' + r.map(c => '<td style="' + color +
-      'border-bottom:1px solid #ddd;padding:6px 10px;font-size:13px">' + esc_(c) + '</td>').join('') + '</tr>';
+      'border-bottom:1px solid #ddd;padding:6px 10px;font-size:13px">' + (c && c.html !== undefined ? c.html : esc_(c)) + '</td>').join('') + '</tr>';
   });
   return h + '</table>';
 }

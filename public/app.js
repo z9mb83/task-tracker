@@ -123,12 +123,14 @@ async function startApp(){
 async function reload(){
   try {
     data = await call(STAFF ? 'adminData' : 'empData', token);
+    lastLoad = Date.now();
     render();
   } catch (err) { toast(err.message, true); }
 }
 
 // ---------- render ----------
 function render(){
+  dirty = false;
   renderInner();
   tickCountdowns();
 }
@@ -190,7 +192,7 @@ function taskTable(list, emptyMsg){
     <tr><th>ID</th><th>Task</th><th>Employee</th><th>Due</th><th>Priority</th><th>Approval</th><th>Status</th><th class="hide-sm">Remarks</th></tr>
     ${list.map(t => `<tr class="click" data-id="${esc(t.id)}">
       <td class="muted tid">${esc(t.id)}</td>
-      <td class="primary"><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub clamp">${esc(t.details)}</div>` : ''}${addedBy(t)}</td>
+      <td class="primary"><div class="t-title">${esc(t.task)}</div>${t.details ? `<div class="t-sub clamp">${esc(t.details)}</div>` : ''}${addedBy(t)}${linksHtml(t, true)}</td>
       <td data-label="For">${esc(t.assignee)}</td>
       <td data-label="Due" class="${t.overdue ? 'overdue' : ''}">${esc(dueText(t))}${countdownHtml(t)}</td>
       <td>${prioPill(t.priority)}</td>
@@ -252,6 +254,20 @@ function bindTimeFields(p){
   upd();
 }
 function timeValues(p){ return { due: $(p+'Due').value, startTime: $(p+'Start').value, limit: Number($(p+'Limit').value) }; }
+
+// ---------- work links ----------
+function linkLabel(u){
+  try { const x = new URL(u); const host = x.hostname.replace(/^www\./, '');
+    const kind = /drive\.google|docs\.google/.test(host) ? 'Drive' : /canva\./.test(host) ? 'Canva' : /figma\./.test(host) ? 'Figma'
+      : /\.(png|jpe?g|gif|webp)$/i.test(x.pathname) ? 'Image' : host;
+    return kind; } catch (e) { return 'Link'; }
+}
+function safeUrl(u){ return /^https?:\/\//i.test(u) ? u : '#'; }
+function linksHtml(t, small){
+  if (!t.links || !t.links.length) return '';
+  return `<div class="links ${small ? 'small' : ''}">${t.links.map((u, i) =>
+    `<a href="${esc(safeUrl(u))}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="${esc(u)}">🔗 ${esc(linkLabel(u))}${t.links.length > 1 ? ' ' + (i + 1) : ''}</a>`).join('')}</div>`;
+}
 
 function addedBy(t){ return t.createdBy ? `<div class="t-sub" style="font-size:11.5px">Added by <b>${esc(t.createdBy)}</b></div>` : ''; }
 function bindTaskRows(){ document.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => openTask(tr.dataset.id)); }
@@ -475,6 +491,7 @@ function infoBox(t){
   return `<div class="card" style="background:var(--bg);box-shadow:none;padding:12px">
       <div><b>Employee status:</b> ${statusPill(t.status)} ${t.approval==='Approved' && t.status !== 'Done' ? Math.round(t.progress*100)+'%' : ''} ${takenHtml(t)}</div>
       ${t.remarks ? `<div style="margin-top:6px"><b>Remarks:</b> ${esc(t.remarks)}</div>` : ''}
+      ${t.links && t.links.length ? `<div style="margin-top:6px"><b>Work links:</b>${linksHtml(t)}</div>` : ''}
       <div class="muted" style="margin-top:6px;font-size:12px">${t.createdBy ? 'Added by ' + esc(t.createdBy) + ' · ' : ''}Created ${esc(t.created||'-')}${t.approvedOn ? ' · Approved '+esc(t.approvedOn) : ''}${t.updated ? ' · Updated '+esc(t.updated) : ''}${t.completed ? ' · Completed '+esc(t.completed) : ''}${t.reopened ? ' · ' + esc(t.reopened) : ''}</div>
     </div>`;
 }
@@ -578,16 +595,39 @@ function renderEmployee(){
           <span class="${t.overdue ? 'overdue' : ''}">${t.dueLabel ? 'Due ' + esc(dueText(t)) : 'No due date'}</span>${countdownHtml(t)}${takenHtml(t)}</div>
         ${t.status === 'Done' ? `
         <div class="done-lock"><span class="pill p-ok">Done</span><span class="muted">${t.completed ? 'Completed ' + esc(t.completed) + ' · ' : ''}locked</span></div>
-        ${t.remarks ? `<div class="t-sub" style="margin-top:8px;max-width:none"><b>Remarks:</b> ${esc(t.remarks)}</div>` : ''}` : `
+        ${t.remarks ? `<div class="t-sub" style="margin-top:8px;max-width:none"><b>Remarks:</b> ${esc(t.remarks)}</div>` : ''}
+        ${linksHtml(t)}` : `
         <div class="seg">${STATUSES.map(s => `<button type="button" data-st="${esc(s)}" class="${s===t.status?'on':''}">${esc(s)}</button>`).join('')}</div>
         <div class="field"><label>Progress: <span data-pv>${Math.round(t.progress*100)}</span>%</label>
           <input type="range" min="0" max="100" step="10" value="${Math.round(t.progress*100)}" data-pr></div>
         <div class="field"><label>Remarks</label><textarea data-rm placeholder="What's done, what's blocking you">${esc(t.remarks)}</textarea></div>
+        <div class="field"><label>Work links <span class="muted" style="font-weight:400">(Drive folder, Canva, screenshot…)</span></label>
+          <div class="link-list" data-links></div>
+          <div class="link-add"><input type="url" data-newlink placeholder="Paste a link, e.g. https://drive.google.com/…" inputmode="url">
+            <button type="button" class="btn ghost small" data-addlink>Add</button></div></div>
         <button class="btn small" data-save>Save update</button>
         <div class="muted lock-note hidden" style="font-size:12px;margin-top:6px">Marking Done locks this ticket. It can't be changed after saving.</div>`}
       </div>`).join('')}</div>`}`;
   document.querySelectorAll('[data-card]').forEach(card => {
     if (!card.querySelector('[data-save]')) return;   // Done tickets are read-only
+    const task = data.tasks.find(t => t.id === card.dataset.card);
+    let links = (task.links || []).slice();
+    const listEl = card.querySelector('[data-links]'), newEl = card.querySelector('[data-newlink]');
+    const drawLinks = () => {
+      listEl.innerHTML = links.map((u, i) => `<div class="link-row"><a href="${esc(safeUrl(u))}" target="_blank" rel="noopener noreferrer" title="${esc(u)}">🔗 ${esc(linkLabel(u))}</a>
+        <span class="link-url">${esc(u)}</span><button type="button" class="link-x" data-rmlink="${i}" aria-label="Remove link">×</button></div>`).join('');
+      listEl.querySelectorAll('[data-rmlink]').forEach(b => b.onclick = () => { links.splice(Number(b.dataset.rmlink), 1); drawLinks(); markDirty(); });
+    };
+    const addLink = () => {
+      const u = newEl.value.trim(); if (!u) return;
+      if (!/^https?:\/\/\S+$/i.test(u)) { toast('Paste a full link starting with https://', true); return; }
+      if (links.length >= 10) { toast('Up to 10 links per task.', true); return; }
+      if (!links.includes(u)) links.push(u);
+      newEl.value = ''; drawLinks(); markDirty();
+    };
+    card.querySelector('[data-addlink]').onclick = addLink;
+    newEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addLink(); } });
+    drawLinks();
     let status = data.tasks.find(t => t.id === card.dataset.card).status || 'Not Started';
     const pr = card.querySelector('[data-pr]'), pv = card.querySelector('[data-pv]');
     card.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
@@ -602,8 +642,10 @@ function renderEmployee(){
     card.querySelector('[data-save]').onclick = async e => {
       const btn = e.target; btn.disabled = true;
       try {
-        data = await call('empUpdateTask', token, card.dataset.card, status, Number(pr.value)/100, card.querySelector('[data-rm]').value);
-        renderEmployee(); tickCountdowns(); toast('Update saved');
+        if (newEl.value.trim()) addLink();   // a pasted link that wasn't added yet
+        data = await call('empUpdateTask', token, card.dataset.card, status, Number(pr.value)/100, card.querySelector('[data-rm]').value, links);
+        dirty = false;
+        dirty = false; renderEmployee(); tickCountdowns(); toast('Update saved');
       } catch (err) { toast(err.message, true); btn.disabled = false; }
     };
   });
@@ -663,6 +705,27 @@ function openNewTaskModal(preEmp){
   };
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('ov')) closeModal(); });
+
+// ---------- auto refresh ----------
+// Keeps every open dashboard current (e.g. the task manager sees an employee's Done without reloading).
+let dirty = false, lastLoad = 0;
+function markDirty(){ dirty = true; }
+document.addEventListener('input', e => { if (e.target.closest && e.target.closest('#main')) markDirty(); });
+document.addEventListener('click', e => { if (e.target.closest && e.target.closest('[data-card] [data-st]')) markDirty(); });
+async function quietRefresh(){
+  if (!token || !data || document.visibilityState !== 'visible') return;
+  if ($('ov') || dirty) return;                                  // popup open or unsaved edits on screen
+  const a = document.activeElement;
+  if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest('#main')) return;
+  try {
+    const fresh = await call(STAFF ? 'adminData' : 'empData', token);
+    if ($('ov') || dirty) return;
+    data = fresh; lastLoad = Date.now();
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+  } catch (e) { /* stay quiet; the next try may work */ }
+}
+setInterval(quietRefresh, 60000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastLoad > 15000) quietRefresh(); });
 
 // ---------- boot ----------
 $('fab').onclick = () => { if (data) openNewTaskModal(currentTab === 'tasks' ? filters.emp : ''); };
