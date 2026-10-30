@@ -212,8 +212,7 @@ function sendNewTaskEmails_(rows, s) {
   let sent = 0;
   const team = getTeam_();
   const brand = s['Company name'] ? s['Company name'] + ' ' : '';
-  const link = String(s['Dashboard URL'] || '').trim() ||
-    'https://docs.google.com/spreadsheets/d/' + s['Employee sheet ID'];
+  const link = employeeLink_(s);
   const byPerson = {};
   rows.forEach(r => {
     const name = r[C.ASSIGNEE - 1];
@@ -253,7 +252,7 @@ function sendDailyEmails() {
   const todayKey = dayKey_(new Date());
   const since = new Date(Date.now() - 86400000);
   const brand = s['Company name'] ? s['Company name'] + ' ' : '';
-  const empUrl = String(s['Dashboard URL'] || '').trim() || 'https://docs.google.com/spreadsheets/d/' + s['Employee sheet ID'];
+  const empUrl = employeeLink_(s);
   const tomorrowLabel = Utilities.formatDate(new Date(Date.now() + 86400000), TZ, 'EEE, dd MMM');
   const adminUrl = SpreadsheetApp.getActive().getUrl();
   const dateLabel = Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy');
@@ -470,6 +469,11 @@ function getAdminTasks_() {
 }
 
 // ---------- Small utilities ----------
+/** Employee dashboard link for emails (falls back to the Employees sheet if no Dashboard URL is set). */
+function employeeLink_(s) {
+  const base = String(s['Dashboard URL'] || '').trim().replace(/\/+$/, '');
+  return base ? base + '/employee' : 'https://docs.google.com/spreadsheets/d/' + s['Employee sheet ID'];
+}
 function listEmails_(v) { return String(v || '').split(/[,;\s]+/).filter(x => x.includes('@')); }
 function dayKey_(d) { return Utilities.formatDate(d, TZ, 'yyyy-MM-dd'); }
 function dueVal_(d) { return d instanceof Date ? d.getTime() : Number.MAX_SAFE_INTEGER; }

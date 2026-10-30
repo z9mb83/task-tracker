@@ -2,7 +2,7 @@
  * TASK TRACKER - Web dashboard (admin + employee)
  * ------------------------------------------------------------
  * Backend for the Vercel dashboard (called through Api.gs).
- *   Employee dashboard:  <Vercel URL>
+ *   Employee dashboard:  <Vercel URL>/employee
  *   Admin dashboard:     <Vercel URL>/admin
  *
  * Admin login:    one shared admin password (set from the sheet menu:
@@ -49,7 +49,7 @@ function showDashboardLinks() {
   const ui = SpreadsheetApp.getUi();
   const link = String(getSettings_()['Dashboard URL'] || '').trim().replace(/\/+$/, '');
   if (!link) { ui.alert('Add your Vercel link next to "Dashboard URL" in the Settings tab first.'); return; }
-  ui.alert('Dashboard links\n\nAdmin:\n' + link + '/admin\n\nEmployees:\n' + link);
+  ui.alert('Dashboard links\n\nSign-in page (all roles):\n' + link + '\n\nAdmin:\n' + link + '/admin\n\nTask managers:\n' + link + '/task-manager\n\nEmployees:\n' + link + '/employee');
 }
 
 // ---------- Auth ----------
@@ -458,7 +458,7 @@ function sendPinEmail_(name, email, pin, isNew) {
   try {
     const s = getSettings_();
     const brand = String(s['Company name'] || '');
-    const link = String(s['Dashboard URL'] || '').trim();
+    const link = String(s['Dashboard URL'] || '').trim() ? employeeLink_(s) : '';
     const first = esc_(String(name).split(' ')[0]);
     let html = '<p>Hi ' + first + ',</p>' +
       (isNew ? '<p>You have been added to the ' + esc_(brand ? brand + ' ' : '') + 'task tracker. ' +

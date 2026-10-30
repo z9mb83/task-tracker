@@ -27,10 +27,11 @@ Task Tracker - Admin (Google Sheet)          Task Tracker - Employees (Google Sh
                      ^
                      |  POST {key, fn, args}
 Vercel  /api/rpc  ---+   (adds the secret; browser never sees it)
+        /               <- "Sign in as" page: Admin / Task manager / Employee
         /admin          <- admin dashboard (password)
         /task-manager   <- task manager dashboard (name + shared PIN)
         /approve        <- confirm page for approve/reject links in admin emails
-        /               <- employee dashboard (email + PIN)
+        /employee       <- employee dashboard (email + PIN)
 ```
 
 The Admin sheet is the single source of truth. Employees write only to their own
@@ -82,8 +83,8 @@ so the `/exec` URL keeps working.
 2. Add Environment Variables: `APPS_SCRIPT_URL` and `API_SECRET` (from step 3), and `TASK_MANAGER_PIN`
    (the shared PIN for task managers; it is stored only in Vercel).
 3. Deploy. Your links:
-   - Admin: `https://<project>.vercel.app/admin`
-   - Employees: `https://<project>.vercel.app/`
+   - Everyone: `https://<project>.vercel.app/` (choose Admin, Task manager or Employee)
+   - Direct links: `/admin`, `/task-manager`, `/employee`
 4. Open `/admin`, go to **Team**, and add employees. Each gets a 6-digit PIN to share with the employee link.
 
 If you change the env vars later, redeploy from the Vercel dashboard so they take effect.

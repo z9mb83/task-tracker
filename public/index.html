@@ -4,60 +4,67 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>My Tasks</title>
+<title>Task Tracker</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231f3864'/><path d='M9 16.5l4.5 4.5L23 11.5' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
+<style>
+  .chooser{max-width:440px}
+  .chooser h1{margin-bottom:4px}
+  .roles{display:flex;flex-direction:column;gap:10px}
+  .role{display:flex;align-items:center;gap:14px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;
+    text-decoration:none;color:var(--ink);background:#fff;transition:border-color .15s,box-shadow .15s,transform .15s}
+  .role:hover{border-color:var(--brand-2);box-shadow:0 2px 10px rgba(31,56,100,.12);transform:translateY(-1px)}
+  .role:focus-visible{outline:3px solid rgba(44,79,138,.35);outline-offset:2px}
+  .role .ic{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex:0 0 42px}
+  .role .ic svg{width:22px;height:22px}
+  .role .tx{flex:1}
+  .role .nm{font-weight:600;font-size:15px}
+  .role .ds{color:var(--muted);font-size:12.5px;margin-top:1px}
+  .role .go{color:var(--muted);font-size:20px}
+  .role .on{font-size:11px;font-weight:600;color:var(--ok);background:var(--ok-bg);border-radius:20px;padding:2px 8px;margin-left:6px;vertical-align:1px}
+  .ic.admin{background:#e8eef8;color:var(--brand)}
+  .ic.manager{background:var(--warn-bg);color:var(--warn)}
+  .ic.employee{background:var(--ok-bg);color:var(--ok)}
+</style>
 </head>
 <body>
-<div id="busy" class="busy hidden"></div>
-
-<!-- LOGIN -->
-<div id="loginView" class="login-wrap">
-  <form class="login" id="loginForm" autocomplete="on">
-    <span class="badge-role" id="loginRole"></span>
-    <h1 id="loginTitle"></h1>
-    <p id="loginSub"></p>
-    <div class="field" id="emailField">
-      <label for="loginEmail">Work email</label>
-      <input type="email" id="loginEmail" autocomplete="username">
+<div class="login-wrap">
+  <div class="login chooser">
+    <h1 id="title">Task Tracker</h1>
+    <p>Sign in as</p>
+    <div class="roles">
+      <a class="role" href="/admin" data-role="admin">
+        <span class="ic admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V7l8-4z"/><path d="M9 12l2 2 4-4"/></svg></span>
+        <span class="tx"><span class="nm">Admin</span><span class="on hidden">Signed in</span><div class="ds">Approve tasks, manage the team</div></span>
+        <span class="go">&rsaquo;</span>
+      </a>
+      <a class="role" href="/task-manager" data-role="manager">
+        <span class="ic manager"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M9 10h6M9 14h6M9 18h3"/></svg></span>
+        <span class="tx"><span class="nm">Task manager</span><span class="on hidden">Signed in</span><div class="ds">Add and track tasks for the team</div></span>
+        <span class="go">&rsaquo;</span>
+      </a>
+      <a class="role" href="/employee" data-role="employee">
+        <span class="ic employee"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg></span>
+        <span class="tx"><span class="nm">Employee</span><span class="on hidden">Signed in</span><div class="ds">See your tasks and update progress</div></span>
+        <span class="go">&rsaquo;</span>
+      </a>
     </div>
-    <div class="field">
-      <label for="loginSecret" id="secretLabel"></label>
-      <input type="password" id="loginSecret" autocomplete="current-password">
-    </div>
-    <button class="btn block" type="submit" id="loginBtn">Sign in</button>
-    <div class="err" id="loginErr"></div>
-  </form>
+  </div>
 </div>
-
-<!-- APP -->
-<div id="appView" class="hidden">
-  <header class="top"><div class="top-inner">
-    <div>
-      <h2 id="appTitle"></h2>
-      <div class="sub" id="appSub"></div>
-    </div>
-    <div class="spacer"></div>
-    <button class="btn ghost small" id="refreshBtn" type="button">Refresh</button>
-    <button class="btn ghost small" id="logoutBtn" type="button">Sign out</button>
-  </div></header>
-  <nav class="tabs" id="adminTabs"><div class="tabs-inner">
-    <button class="tab active" data-tab="overview">Overview</button>
-    <button class="tab" data-tab="tasks">All tasks</button>
-    <button class="tab" data-tab="approvals">Approvals <span class="count hidden" id="pendingCount"></span></button>
-    <button class="tab" data-tab="newtask">New task</button>
-    <button class="tab" data-tab="team">Team</button>
-  </div></nav>
-  <main id="main"></main>
-  <button class="fab hidden" id="fab" type="button" title="Assign a new task" aria-label="Assign a new task">+</button>
-</div>
-
-<div id="modalRoot"></div>
-<div id="toast" class="toast hidden"></div>
-
-<script>window.PAGE = 'employee';</script>
-<script src="/app.js"></script>
+<script>
+  // Show which roles already have a session on this device
+  document.querySelectorAll('[data-role]').forEach(a => {
+    let on = false;
+    try { on = !!localStorage.getItem('tt_' + a.dataset.role); } catch (e) {}
+    a.querySelector('.on').classList.toggle('hidden', !on);
+  });
+  fetch('/api/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fn: 'publicInfo', args: [] }) })
+    .then(r => r.json()).then(j => {
+      const b = j && j.ok && j.result && j.result.brand;
+      if (b) { document.getElementById('title').textContent = b + ' Task Tracker'; document.title = b + ' Task Tracker'; }
+    }).catch(() => {});
+</script>
 </body>
 </html>
