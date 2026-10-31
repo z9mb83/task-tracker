@@ -455,11 +455,13 @@ function renderNewTask(){
         <div class="field"><label>Employee</label><select id="ntEmp" required>${options(emps, emps.length === 1 ? emps[0] : '', 'Select employee')}</select></div>
         <div class="field"><label>Priority</label><select id="ntPrio">${options(PRIORITIES, 'Medium')}</select></div>
       </div>
+      <div class="workload hidden" id="ntLoad"></div>
       ${timeFields('nt')}
       ${addButtons('nt', false)}
     </form>`}</div>`;
   const f = $('ntForm'); if (!f) return;
   bindTimeFields('nt');
+  bindWorkload('nt');
   f.onsubmit = async e => {
     e.preventDefault();
     if (!$('ntEmp').value) { toast('Pick an employee.', true); return; }
@@ -1105,6 +1107,69 @@ async function showPhoto(id, who){
   } catch (err) { delete photoCache[id]; if ($('phMsg')) $('phMsg').textContent = err.message; }
 }
 
+// ---------- employee workload while assigning ----------
+const OPEN_STAGES = ['Waiting for approval', 'Not Started', 'In Progress', 'Blocked', 'On Hold'];
+function fmtWhen(ms){
+  const d = new Date(ms), now = new Date();
+  const day = d.toDateString() === now.toDateString() ? 'today'
+    : d.toDateString() === new Date(now.getTime() + 864e5).toDateString() ? 'tomorrow'
+    : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  return day + ' ' + fmtClock(pad2(d.getHours()) + ':' + pad2(d.getMinutes()));
+}
+/** Next sensible start: the given time rounded up to 5 min, moved to 10:00 next working day if after 6 PM. */
+function nextStart(ms){
+  const d = new Date(Math.max(ms, Date.now()));
+  d.setSeconds(0, 0); d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5);
+  if (d.getHours() >= 18 || (d.getHours() === 17 && d.getMinutes() > 15)) { d.setDate(d.getDate() + 1); d.setHours(10, 0, 0, 0); }
+  if (d.getHours() < 10) d.setHours(10, 0, 0, 0);
+  if (d.getDay() === 0) d.setDate(d.getDate() + 1);     // Sunday off
+  return d;
+}
+function bindWorkload(p){
+  const box = $(p + 'Load'); if (!box) return;
+  const draw = () => {
+    const who = $(p + 'Emp').value;
+    if (!who) { box.classList.add('hidden'); return; }
+    const open = data.tasks.filter(t => t.assignee === who && OPEN_STAGES.includes(stageOf(t)))
+      .sort((a, b) => (a.dueAtMs || 9e15) - (b.dueAtMs || 9e15));
+    const timed = open.filter(t => t.dueAtMs > 1577836800000);
+    const lastEnd = timed.reduce((m, t) => Math.max(m, t.dueAtMs), 0);
+    // the slot being chosen
+    const tv = timeValues(p);
+    let clash = [];
+    if (tv.due && tv.startTime) {
+      const s0 = new Date(tv.due + 'T' + tv.startTime).getTime(), s1 = s0 + tv.limit * 60000;
+      clash = timed.filter(t => { const e = t.dueAtMs, b = e - (t.limit || 45) * 60000; return s0 < e && s1 > b; });
+    }
+    const a = data.attToday && data.attToday[who];
+    const att = data.attToday == null ? '' : a
+      ? `<div class="wl-att ok">✓ Checked in ${esc(a.inLabel)}${a.office ? ', ' + esc(a.office) : ''}${a.late ? ' (late)' : ''}${a.outLabel ? ' · left ' + esc(a.outLabel) : ''}</div>`
+      : `<div class="wl-att bad">Not checked in today</div>`;
+    const free = lastEnd > Date.now() ? nextStart(lastEnd) : null;
+    box.innerHTML = `${att}
+      <div class="wl-head"><b>${esc(who)}'s open tickets</b> <span class="muted">(${open.length})</span></div>
+      ${open.length ? `<div class="wl-list">${open.map(t => {
+        const isClash = clash.includes(t);
+        return `<div class="wl-row ${isClash ? 'clash' : ''}"><span class="muted tid">${esc(t.id)}</span>
+          <span class="wl-task">${esc(t.task)}</span>${stagePill(t)}
+          <span class="wl-due ${t.overdue ? 'overdue' : ''}">${t.dueAtMs > 1577836800000 ? 'due ' + esc(fmtWhen(t.dueAtMs)) : esc(t.dueLabel || 'no time')}${countdownHtml(t)}</span></div>`; }).join('')}</div>`
+        : '<div class="muted" style="font-size:13px">Nothing open. Free now.</div>'}
+      ${clash.length ? `<div class="wl-clash">⚠ This slot overlaps ${clash.map(t => esc(t.id) + ' (' + esc(fmtClock(pad2(new Date(t.dueAtMs - (t.limit || 45) * 60000).getHours()) + ':' + pad2(new Date(t.dueAtMs - (t.limit || 45) * 60000).getMinutes()))) + '–' + esc(fmtClock(pad2(new Date(t.dueAtMs).getHours()) + ':' + pad2(new Date(t.dueAtMs).getMinutes()))) + ')').join(', ')}. You can still save it.</div>` : ''}
+      ${free ? `<div class="wl-free">Free from <b>${esc(fmtWhen(lastEnd))}</b> <button type="button" class="btn ghost small" id="${p}After">Start after these → ${esc(fmtWhen(free.getTime()))}</button></div>` : ''}`;
+    box.classList.remove('hidden');
+    tickCountdowns();
+    if ($(p + 'After')) $(p + 'After').onclick = () => {
+      $(p + 'Due').value = free.getFullYear() + '-' + pad2(free.getMonth() + 1) + '-' + pad2(free.getDate());
+      $(p + 'Start').value = pad2(free.getHours()) + ':' + pad2(free.getMinutes());
+      $(p + 'Start').dispatchEvent(new Event('input')); draw();
+    };
+  };
+  $(p + 'Emp').addEventListener('change', draw);
+  ['Due', 'Start', 'Limit'].forEach(k => $(p + k).addEventListener('input', draw));
+  $(p + 'Limit').addEventListener('change', draw);
+  draw();
+}
+
 // ---------- quick "+" task modal ----------
 function openNewTaskModal(preEmp){
   const emps = activeEmployees();
@@ -1121,10 +1186,12 @@ function openNewTaskModal(preEmp){
         <div class="field"><label>Employee</label><select id="qtEmp" required>${options(emps, emps.includes(preEmp) ? preEmp : (emps.length === 1 ? emps[0] : ''), 'Select employee')}</select></div>
         <div class="field"><label>Priority</label><select id="qtPrio">${options(PRIORITIES, 'Medium')}</select></div>
       </div>
+      <div class="workload hidden" id="qtLoad"></div>
       ${timeFields('qt')}
       ${addButtons('qt', true)}
     </form>`);
   bindTimeFields('qt');
+  bindWorkload('qt');
   $('qtTask').focus();
   $('qtCancel').onclick = closeModal;
   $('qtForm').onsubmit = async e => {

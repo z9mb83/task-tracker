@@ -165,7 +165,8 @@ function adminData(token) {
   return {
     role: sess.role, me: sess.name,
     brand: String(s['Company name'] || ''), today: todayKey,
-    tasks: tasks, team: team, stats: stats, perEmployee: perEmployee
+    tasks: tasks, team: team, stats: stats, perEmployee: perEmployee,
+    attToday: (function () { try { return attendanceTodayAll_(); } catch (e) { return null; } })()
   };
 }
 

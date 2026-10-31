@@ -313,3 +313,15 @@ html.m .day-ph .cam-box{max-height:42vh}
 .review-log{margin-top:10px;font-size:12px;color:var(--muted);border-top:1px solid rgba(0,0,0,.08);padding-top:8px;white-space:pre-wrap}
 .sent-back{background:var(--bad-bg);border-left:3px solid var(--bad);border-radius:8px;padding:8px 10px;margin:0 0 10px;font-size:13px}
 .sent-back b{color:var(--bad)} .sent-back div{margin-top:3px;white-space:pre-wrap}
+
+/* ---------- workload while assigning ---------- */
+.workload{background:var(--grey-bg);border-radius:10px;padding:10px 12px;margin:2px 0 14px;font-size:13px}
+.wl-head{margin-bottom:6px}
+.wl-list{display:flex;flex-direction:column;gap:6px}
+.wl-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;background:#fff;border-radius:8px;padding:6px 8px;border:1px solid var(--line)}
+.wl-row.clash{border-color:var(--bad);background:var(--bad-bg)}
+.wl-task{font-weight:600;flex:1;min-width:120px}
+.wl-due{color:var(--muted);font-size:12.5px}
+.wl-att{font-size:12.5px;font-weight:600;margin-bottom:6px} .wl-att.ok{color:var(--ok)} .wl-att.bad{color:var(--bad)}
+.wl-clash{color:var(--bad);font-weight:600;margin-top:8px}
+.wl-free{margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}

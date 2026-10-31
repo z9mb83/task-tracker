@@ -218,6 +218,21 @@ function empCheck(token, kind, photo, lat, lng, acc) {
   return empData(token);
 }
 
+/** Today's check-in for every employee: { name: { inLabel, outLabel, office, late } }. Shown when assigning tasks. */
+function attendanceTodayAll_() {
+  const sh = SpreadsheetApp.getActive().getSheetByName(ATT_TAB);
+  if (!sh) return {};
+  const day = dayKey_(new Date());
+  const out = {};
+  attRows_(sh).forEach(x => {
+    const r = x.v;
+    if (String(r[A.DATE - 1]) !== day || !(r[A.IN - 1] instanceof Date)) return;
+    out[r[A.NAME - 1]] = { inLabel: clock_(r[A.IN - 1]), outLabel: clock_(r[A.OUT - 1]),
+                           office: String(r[A.IN_OFFICE - 1] || ''), late: r[A.LATE - 1] === 'Yes' };
+  });
+  return out;
+}
+
 /** Today's attendance for one employee (shown on their dashboard). */
 function attendanceToday_(name) {
   const cfg = attSettings_();
