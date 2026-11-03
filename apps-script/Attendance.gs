@@ -322,6 +322,7 @@ function adminAttendance(token, month) {
   });
   return {
     today: today, month: m.month, todayRows: todayRows, monthRows: m.monthRows, summary: m.summary, calendar: m.calendar,
+    holidays: holidayList_(cfg.holidays),
     office: { offices: cfg.offices, radius: cfg.radius, block: cfg.block,
               hours: clock_(atMinutes_(today, cfg.start)) + ' - ' + clock_(atMinutes_(today, cfg.end)),
               lateAfter: clock_(atMinutes_(today, cfg.start + cfg.buffer)),
@@ -418,6 +419,55 @@ function ensureAttendanceSettings_() {
       sh.appendRow(['', '', '']);
       sh.getRange(sh.getLastRow(), 1, 1, 3).setNumberFormat('@').setValues([r]);
     });
+}
+
+// ---------- Office holidays and festivals (admin dashboard) ----------
+// Stored in Settings > Holidays ("2026-11-08: Diwali, 2026-12-25: Christmas").
+// Holidays are not working days and not leaves; they show on the calendars.
+function holidayList_(map) {
+  return Object.keys(map || {}).sort().map(d => ({ date: d, label: map[d] || '' }));
+}
+
+function cleanHolidayLabel_(v) {
+  return String(v || '').replace(/[,;:\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
+function saveHolidays_(map) {
+  ensureAttendanceSettings_();
+  const sh = SpreadsheetApp.getActive().getSheetByName(SETTINGS_TAB);
+  const labels = sh.getRange(1, 1, Math.max(sh.getLastRow(), 1), 1).getValues().map(r => String(r[0]).trim());
+  const row = labels.indexOf('Holidays') + 1;
+  const text = holidayList_(map).map(h => h.date + (h.label ? ': ' + h.label : '')).join(', ');
+  sh.getRange(row, 2).setNumberFormat('@').setValue(text);
+}
+
+/** Admin: the list of office holidays. */
+function adminHolidays(token) {
+  requireSession_(token, 'admin');
+  return holidayList_(attSettings_().holidays);
+}
+
+/** Admin: add a holiday, or rename the one on that date. date = yyyy-mm-dd. */
+function adminSetHoliday(token, date, label) {
+  requireSession_(token, 'admin');
+  const d = String(date || '').trim();
+  const day = parseDay_(d);
+  if (!day || Utilities.formatDate(day, TZ, 'yyyy-MM-dd') !== d) throw new Error('Pick a valid date.');   // rejects 2026-02-30
+  const name = cleanHolidayLabel_(label);
+  if (!name) throw new Error('Enter the holiday or festival name.');
+  const map = attSettings_().holidays;
+  map[d] = name;
+  saveHolidays_(map);
+  return holidayList_(map);
+}
+
+/** Admin: remove the holiday on that date. */
+function adminRemoveHoliday(token, date) {
+  requireSession_(token, 'admin');
+  const map = attSettings_().holidays;
+  delete map[String(date || '').trim()];
+  saveHolidays_(map);
+  return holidayList_(map);
 }
 
 /** Adds the attendance triggers (called from setup). */

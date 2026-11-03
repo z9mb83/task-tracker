@@ -19,7 +19,9 @@ const API_FUNCTIONS = [
   'empData', 'empUpdateTask',
   'managerLogin', 'decisionInfo', 'decide',
   'adminDecideChange', 'adminReopen', 'reviewTask',
-  'empCheck', 'empAttendance', 'adminAttendance', 'adminAttPhoto'
+  'empCheck', 'empAttendance', 'adminAttendance', 'adminAttPhoto',
+  'adminHolidays', 'adminSetHoliday', 'adminRemoveHoliday',
+  'gptContext', 'gptAddTasks'          // ChatGPT (api/gpt/*), not the dashboard
 ];
 
 function doPost(e) {

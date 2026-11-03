@@ -53,6 +53,7 @@ tab (in the sheet or through the dashboard), and the script copies their updates
 | `public/admin.html`, `task-manager.html`, `employee.html` | Dashboard pages (all use `app.js` + `style.css`) |
 | `public/approve.html` | Confirm page for the Approve / Reject buttons in admin emails |
 | `api/rpc.js` | Vercel function that forwards dashboard calls to Apps Script and checks the task manager PIN |
+| `docs/chatgpt-setup.md` | The pinned ChatGPT chat that adds tasks straight into the Admin sheet, and the instructions it was given |
 | `vercel.json` | Clean URLs, security headers |
 | `docs/sheet-structure.md` | Columns of every tab and every Settings row |
 | `tests/` | Offline tests: dashboard flows against a mock Apps Script, and ticket timing logic |
@@ -134,7 +135,8 @@ If you change the env vars later, redeploy from the Vercel dashboard so they tak
 | Offices | `Mohali: 30.687737, 76.737623; Chandigarh: 30.734315, 76.787665`. Check-in works at any of them and is tagged with the office |
 | Office radius (m) | How close to an office a check-in must be (default 150) |
 | Location check | Block (default) or Flag only |
-| Weekly off, Holidays | Used for working days and leaves in the monthly report (default weekly off: Sunday) |
+| Weekly off | Used for working days and leaves in the monthly report (default: Sunday) |
+| Holidays | Office holidays and festivals. Add or remove them in the dashboard's **Attendance** tab (admin); holidays are not working days or leaves |
 | Office start / end, Buffer (min) | 10:00 / 18:00 / 20: late after 10:20, left early before 5:40, auto check-out 6:20 PM |
 
 ## Notes

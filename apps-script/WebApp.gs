@@ -172,6 +172,14 @@ function adminData(token) {
 
 function adminAddTask(token, t) {
   const sess = requireSession_(token, STAFF);
+  const emailed = insertTask_(sess, t).emailed;
+  const data = adminData(token);
+  data.emailed = emailed;
+  return data;
+}
+
+/** Writes one new task row (shared by the dashboard and the ChatGPT endpoint). */
+function insertTask_(sess, t) {
   t = t || {};
   const task = String(t.task || '').trim();
   if (!task) throw new Error('Task title is required.');
@@ -200,9 +208,32 @@ function adminAddTask(token, t) {
   let emailed = 0;
   if (isAdmin && t.sendNow && vals[C.ID - 1]) emailed = sendNewTaskEmails_([vals], getSettings_());
   if (!isAdmin && vals[C.ID - 1]) notifyAdminsNewTask_(vals, createdBy);
-  const data = adminData(token);
-  data.emailed = emailed;
-  return data;
+  return { emailed: emailed, id: String(vals[C.ID - 1] || '') };
+}
+
+// ---------- ChatGPT (called from Vercel /api/gpt/*; see docs/chatgpt-setup.md) ----------
+/** Today's date and the active employees, so the GPT can match names and dates. */
+function gptContext() {
+  const today = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  const employees = getTeamAll_().filter(m => m.active && m.role === 'Employee').map(m => m.name);
+  return { today: today, timeZone: TZ, employees: employees, priorities: PRIORITIES, timeLimits: LIMITS, offices: attSettings_().offices.map(o => o.name) };
+}
+
+/** Adds several tasks as admin, approved (the daily email picks them up). Max 20 per call. */
+function gptAddTasks(tasks) {
+  const list = Array.isArray(tasks) ? tasks : [];
+  if (!list.length) throw new Error('No tasks given.');
+  if (list.length > 20) throw new Error('Add at most 20 tasks per request.');
+  const sess = { role: 'admin', name: 'Admin' };
+  return list.map(item => {
+    const t = Object.assign({ approveNow: true }, item || {});
+    try {
+      const r = insertTask_(sess, t);
+      return { ok: true, id: r.id, task: String(t.task || ''), employee: String(t.assignee || ''), due: String(t.due || '') };
+    } catch (err) {
+      return { ok: false, task: String(t.task || ''), employee: String(t.assignee || ''), error: (err && err.message) || String(err) };
+    }
+  });
 }
 
 // ---------- Editing rules ----------
