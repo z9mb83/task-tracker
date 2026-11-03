@@ -60,7 +60,7 @@
 | Office start / Office end | 10:00 / 18:00 |
 | Buffer (min) | 20 |
 | Weekly off | Sunday (or e.g. "Saturday, Sunday") |
-| Holidays | Comma separated: `2026-11-08: Diwali, 2026-12-25: Christmas` |
+| Holidays | Comma separated: `2026-11-08: Diwali, 2026-12-25: Christmas`. Normally managed from the dashboard's Attendance tab |
 
 ### Attendance
 One row per employee per day, written by the dashboard.

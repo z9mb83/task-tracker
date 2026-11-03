@@ -977,6 +977,7 @@ async function renderAttendance(){
         <td data-label="Photos" class="thumbs">${thumb(r.inPhoto, 'In ' + r.inLabel)}${thumb(r.outPhoto, 'Out ' + r.outLabel)}</td>
         <td class="full">${notes(r)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No active employees.</td></tr>'}
     </table></div></div>
+    ${holidaysCard()}
     <div class="card"><div class="row" style="align-items:flex-end;margin-bottom:10px">
         <h3 style="margin:0;flex:1">Monthly report · ${esc(monthLabel)}</h3>
         <div class="field" style="margin:0;max-width:180px"><label>Month</label><select id="attMonth">${months.map(m => `<option value="${m}" ${m === att.month ? 'selected' : ''}>${esc(new Date(m + '-01T00:00').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }))}</option>`).join('')}</select></div></div>
@@ -1010,6 +1011,7 @@ async function renderAttendance(){
   document.querySelectorAll('[data-photo]').forEach(b => b.onclick = () => showPhoto(b.dataset.photo, b.closest('tr').querySelector('.t-title').firstChild.textContent.trim()));
   document.querySelectorAll('[data-empcal]').forEach(tr => tr.onclick = () => showEmpMonth(tr.dataset.empcal));
   $('attCsv').onclick = downloadAttCsv;
+  bindHolidays();
   loadThumbs();
 }
 function shortDate(d){ return new Date(d + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
@@ -1064,6 +1066,36 @@ function showDayPhotos(name, r, back){
   document.querySelectorAll('[data-ph]').forEach(async el => {
     try { const p = await fetchPhoto(el.dataset.ph); if (el.isConnected) el.outerHTML = `<img src="${p.dataUrl}" alt="${esc(name)} photo">`; }
     catch (e) { if (el.isConnected) el.textContent = e.message; }
+  });
+}
+/** Admin: office holidays and festivals (not working days; shown on calendars). */
+function holidaysCard(){
+  const list = att.holidays || [];
+  const fmt = d => new Date(d + 'T00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  return `<div class="card"><h3>Office holidays &amp; festivals</h3>
+    <p class="muted" style="margin:0 0 10px;font-size:12.5px">Holidays are not counted as working days or leaves, and show on employee calendars. Adding a date that already has a holiday renames it.</p>
+    ${list.length ? `<div class="table-wrap"><table class="rt">
+      <tr><th>Date</th><th>Name</th><th></th></tr>
+      ${list.map(h => `<tr><td class="primary t-title" data-label="Date">${esc(fmt(h.date))}</td><td data-label="Name">${esc(h.label || 'Holiday')}</td>
+        <td class="full"><button type="button" class="btn ghost small" data-hdel="${esc(h.date)}">Remove</button></td></tr>`).join('')}
+    </table></div>` : '<div class="muted" style="margin-bottom:6px">No holidays added yet.</div>'}
+    <form id="holForm" class="row" style="align-items:flex-end;gap:10px;flex-wrap:wrap;margin-top:12px">
+      <div class="field" style="margin:0"><label for="hDate">Date</label><input type="date" id="hDate" required></div>
+      <div class="field" style="margin:0;flex:1;min-width:180px"><label for="hName">Name</label><input id="hName" maxlength="60" placeholder="e.g. Diwali" required></div>
+      <button class="btn small" type="submit">Add holiday</button>
+    </form></div>`;
+}
+function bindHolidays(){
+  const f = $('holForm'); if (!f) return;
+  f.onsubmit = async e => {
+    e.preventDefault();
+    try { await call('adminSetHoliday', token, $('hDate').value, $('hName').value); toast('Holiday saved.'); att._stale = true; renderAttendance(); }
+    catch (err) { toast(err.message, true); }
+  };
+  document.querySelectorAll('[data-hdel]').forEach(b => b.onclick = async () => {
+    if (!confirm('Remove this holiday?')) return;
+    try { await call('adminRemoveHoliday', token, b.dataset.hdel); toast('Holiday removed.'); att._stale = true; renderAttendance(); }
+    catch (err) { toast(err.message, true); }
   });
 }
 function downloadAttCsv(){
