@@ -125,7 +125,7 @@ async function signOut(silent){
   if (token && !silent) { try { await call('logout', token); } catch(e){} }
   token = null; data = null; store.set(null);
   $('appView').classList.add('hidden'); $('loginView').classList.remove('hidden');
-  $('fab').classList.add('hidden'); closeModal();
+  $('fab').classList.add('hidden'); closeFabMenu(); closeModal();
   if (silent) $('loginErr').textContent = 'Your session expired. Please sign in again.';
 }
 async function startApp(){
@@ -157,7 +157,7 @@ function renderInner(){
     const waiting = data.stats.pending + (data.stats.changes || 0);
     const pc = $('pendingCount'); pc.textContent = waiting; pc.classList.toggle('hidden', !waiting);
     document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === currentTab));
-    $('fab').classList.toggle('hidden', currentTab === 'attendance');
+    $('fab').classList.toggle('hidden', currentTab === 'attendance'); closeFabMenu();
     ({overview:renderOverview, tasks:renderTasks, approvals:renderApprovals, newtask:renderNewTask, team:renderTeam, attendance:renderAttendance})[currentTab]();
   } else {
     renderEmployee();
@@ -1264,7 +1264,29 @@ setInterval(quietRefresh, 60000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastLoad > 15000) quietRefresh(); });
 
 // ---------- boot ----------
-$('fab').onclick = () => { if (data) openNewTaskModal(currentTab === 'tasks' ? filters.emp : ''); };
+// Admin's + button: add manually, or open the pinned ChatGPT chat that writes tasks into the sheet (docs/chatgpt-setup.md)
+const CHATGPT_TASK_CHAT = 'https://chatgpt.com/c/6ae9c474-16cc-83ee-9bb3-111e11c22920';
+function closeFabMenu(){ const m = $('fabMenu'); if (m) m.remove(); $('fab').setAttribute('aria-expanded', 'false'); }
+function openFabMenu(){
+  const m = document.createElement('div');
+  m.id = 'fabMenu'; m.className = 'fab-menu'; m.setAttribute('role', 'menu');
+  m.innerHTML = `<button type="button" role="menuitem" id="fabManual"><span class="fm-i" aria-hidden="true">✎</span>
+      <span><b>Add manually</b><small>Fill in the task form</small></span></button>
+    <a role="menuitem" id="fabGpt" href="${CHATGPT_TASK_CHAT}" target="_blank" rel="noopener noreferrer"><span class="fm-i" aria-hidden="true">✦</span>
+      <span><b>Add using ChatGPT</b><small>Opens your Task Tracker chat</small></span></a>`;
+  document.body.appendChild(m);
+  $('fab').setAttribute('aria-expanded', 'true');
+  $('fabManual').onclick = () => { closeFabMenu(); openNewTaskModal(currentTab === 'tasks' ? filters.emp : ''); };
+  $('fabGpt').onclick = () => closeFabMenu();
+  $('fabManual').focus();
+}
+document.addEventListener('click', e => { const m = $('fabMenu'); if (m && !m.contains(e.target) && e.target !== $('fab')) closeFabMenu(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('fabMenu')) { closeFabMenu(); $('fab').focus(); } });
+$('fab').onclick = () => {
+  if (!data) return;
+  if (!IS_ADMIN) return openNewTaskModal(currentTab === 'tasks' ? filters.emp : '');   // task managers: straight to the form
+  $('fabMenu') ? closeFabMenu() : openFabMenu();
+};
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => { currentTab = b.dataset.tab; if (currentTab === 'attendance' && att) att._stale = true; if (data) render(); });
 $('logoutBtn').onclick = () => signOut(false);
 $('refreshBtn').onclick = async () => {

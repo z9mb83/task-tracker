@@ -111,6 +111,14 @@
   .fab:hover{background:var(--brand-2);transform:scale(1.06)}
   .fab:focus-visible{outline:3px solid rgba(44,79,138,.4);outline-offset:3px}
   #appView main{padding-bottom:96px}
+  .fab-menu{position:fixed;right:24px;bottom:94px;z-index:16;background:var(--card);border:1px solid var(--line);border-radius:12px;
+    box-shadow:0 10px 30px rgba(16,24,40,.18);padding:6px;min-width:240px;display:flex;flex-direction:column;gap:2px}
+  .fab-menu button,.fab-menu a{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border:0;border-radius:8px;background:transparent;
+    color:var(--ink);text-align:left;text-decoration:none;cursor:pointer;font:inherit}
+  .fab-menu button:hover,.fab-menu a:hover,.fab-menu button:focus-visible,.fab-menu a:focus-visible{background:var(--accent);outline:none}
+  .fab-menu .fm-i{width:32px;height:32px;flex:none;border-radius:50%;background:var(--accent);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:16px}
+  .fab-menu b{display:block;font-size:14px}.fab-menu small{display:block;color:var(--muted);font-size:12px}
+  @media (max-width:640px){ .fab-menu{right:16px;bottom:84px} }
   @media (max-width:640px){ .fab{right:16px;bottom:16px} }
 
 /* ===================== Phone layout (html.m, below 700px) ===================== */
@@ -190,6 +198,7 @@ html.m .seg button{padding:7px 11px}
 
 html.m .login{padding:24px 20px}
 html.m .fab{right:16px;bottom:calc(16px + env(safe-area-inset-bottom))}
+html.m .fab-menu{right:16px;bottom:calc(84px + env(safe-area-inset-bottom))}
 html.m .toast{left:12px;right:12px;transform:none;text-align:center;bottom:84px}
 
 /* ?phone=1 preview on desktop */
