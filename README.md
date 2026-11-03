@@ -53,8 +53,8 @@ tab (in the sheet or through the dashboard), and the script copies their updates
 | `public/admin.html`, `task-manager.html`, `employee.html` | Dashboard pages (all use `app.js` + `style.css`) |
 | `public/approve.html` | Confirm page for the Approve / Reject buttons in admin emails |
 | `api/rpc.js` | Vercel function that forwards dashboard calls to Apps Script and checks the task manager PIN |
-| `api/gpt/tasks.js`, `api/gpt/context.js`, `lib/gpt-shared.js` | ChatGPT custom GPT endpoints (add tasks, get today's date and employee names), checked with `GPT_API_KEY` |
-| `docs/chatgpt-setup.md`, `docs/chatgpt-action.yaml` | How to create the Task Tracker GPT, its instructions and action schema |
+| `api/mcp.js`, `api/oauth/*.js`, `lib/oauth.js`, `lib/apps.js` | ChatGPT plugin: MCP server (get date and employees, add tasks) with admin-password sign-in (OAuth) |
+| `docs/chatgpt-setup.md` | How to connect the ChatGPT plugin |
 | `vercel.json` | Clean URLs, security headers |
 | `docs/sheet-structure.md` | Columns of every tab and every Settings row |
 | `tests/` | Offline tests: dashboard flows against a mock Apps Script, and ticket timing logic |
@@ -90,8 +90,8 @@ so the `/exec` URL keeps working.
 ### 4. Vercel
 1. On vercel.com: **Add New > Project**, import this GitHub repo. Framework preset: **Other**. No build command.
 2. Add Environment Variables: `APPS_SCRIPT_URL` and `API_SECRET` (from step 3), and `TASK_MANAGER_PIN`
-   (the shared PIN for task managers; it is stored only in Vercel). Optional, for ChatGPT: `GPT_API_KEY`
-   (see `docs/chatgpt-setup.md`).
+   (the shared PIN for task managers; it is stored only in Vercel). For ChatGPT, see `docs/chatgpt-setup.md`
+   (no extra variables needed).
 3. Deploy. Your links:
    - Everyone: `https://<project>.vercel.app/` (choose Admin, Task manager or Employee)
    - Direct links: `/admin`, `/task-manager`, `/employee`

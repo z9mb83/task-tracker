@@ -1,54 +1,37 @@
-# Task Tracker in ChatGPT
+# Task Tracker in ChatGPT (plugin)
 
-The admin talks to a custom GPT. It asks for any missing details, shows a summary, and on
-approval adds the tasks to the Admin sheet for the right employee, exactly as the dashboard does.
-The GPT never sees the sheet directly; it calls two endpoints on your dashboard (`/api/gpt/*`).
+The admin tells ChatGPT the tasks in plain words. ChatGPT checks the employee names and dates,
+shows the list, and after a yes adds the tasks to the Admin sheet for the right employees,
+the same as the dashboard's New task. It can only see employee names and add tasks.
 
-## 1. Set the key in Vercel
+ChatGPT custom GPTs are retired on 11 December 2026, so this is a ChatGPT **plugin** that talks to
+an MCP server on the dashboard (`/api/mcp`), protected by sign-in with the admin dashboard password.
 
-1. Make a long random key (for example `openssl rand -hex 32`).
-2. Vercel > your project > Settings > Environment Variables: add **GPT_API_KEY** with that value.
-3. Redeploy. Keep this key private; anyone with it can add tasks.
+## How it works
 
-## 2. Create the custom GPT (ChatGPT, paid plan)
+| Part | Where |
+| --- | --- |
+| MCP server (tools `get_context`, `add_tasks`) | `api/mcp.js` |
+| Sign-in (OAuth 2.1 with PKCE, dynamic client registration) | `api/oauth/*.js`, `lib/oauth.js` |
+| Discovery | `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server` (rewrites in `vercel.json`) |
+| Sheet writes | Apps Script `gptContext`, `gptAddTasks` (WebApp.gs) |
 
-1. ChatGPT > Explore GPTs > **Create**, then **Configure**.
-2. Name: `Task Tracker`. Description: `Adds tasks for employees to the office task sheet.`
-3. **Instructions**: paste the text in section 4 below.
-4. **Actions** > **Create new action**:
-   - Schema: paste the whole of `docs/chatgpt-action.yaml`, after replacing `YOUR-DASHBOARD.vercel.app` with your dashboard domain.
-   - Authentication: **API Key**, Auth Type **Bearer**, and paste the `GPT_API_KEY` value.
-5. Save, and set **Only me** (or share only with the admins) under Share.
+- The admin password is checked by Apps Script, with the same 5-tries / 15-minute lockout as the dashboard.
+- Only ChatGPT's own callback addresses (chatgpt.com, chat.openai.com) can receive sign-in codes.
+- Tokens are signed, not stored: access lasts 1 hour, and ChatGPT renews it for up to 30 days, then asks for the password again.
+- No extra Vercel variables are needed. Optional: set `MCP_TOKEN_SECRET` to any long random value (or change it) and redeploy to sign ChatGPT out immediately.
 
-## 3. Use it
+## Connect it (once)
 
-Say something like: *"Tell Aryan to send the Mohali visit report by 5 PM tomorrow, 45 minutes, starting 3 PM."*
-The GPT checks names and dates, shows you the tasks, and adds them only after you confirm.
-Each task appears in the sheet as approved with its own ticket ID, and the employee gets it in the daily email.
+1. ChatGPT > **Plugins** > **Add** > **Add custom MCP server**.
+2. Name `Task Tracker`; description `Add tasks for employees`.
+3. Connection: **Server URL** `https://<your dashboard>/api/mcp`
+4. Authentication: **OAuth**. Save.
+5. ChatGPT opens the Task Tracker sign-in page: enter the **admin dashboard password** and press **Allow**.
 
-## 4. Instructions to paste into the GPT
+## Use it
 
-```
-You add tasks for employees in the office Task Tracker. Use the Actions only.
-
-Before anything else, call getContext to get today's date and the exact employee names.
-
-For each task you need: a short title, the employee (must match a name from getContext),
-a due date (yyyy-MM-dd), and a start time (24-hour HH:MM). Work out "tomorrow", "Friday" and
-similar from today's date. If a detail is missing or the employee name is unclear, ask one
-short question. Do not guess names or dates.
-
-Defaults if the admin does not say: 45-minute limit, Medium priority, no details, sendNow false.
-
-Before adding anything, show the admin a short list of the tasks (employee, title, due, start, limit)
-and wait for a clear yes. Then call addTasks once with all the tasks.
-
-Report the result: for each task, the ticket ID, or the reason it failed. Keep replies short.
-Never add tasks the admin did not ask for. Do not change or delete existing tasks; you can only add.
-```
-
-## Notes
-
-- Tasks from the GPT are approved immediately, like an admin's own tasks.
-- The GPT can only add tasks. Holidays, employees, and attendance stay in the dashboard.
-- To stop access, delete the **GPT_API_KEY** variable in Vercel (or change it) and redeploy.
+In a chat, turn on the Task Tracker plugin and say, for example:
+*"Tell Aryan to send the Mohali visit report tomorrow at 3 PM, 45 minutes, high priority."*
+ChatGPT confirms the list with you before adding, then replies with the ticket IDs.
+Tasks are approved immediately; employees get them in the daily email (or right away if you ask it to email now).
