@@ -8,7 +8,8 @@ employee sees it on the dashboard and in the 7 PM email.
 
 ## Using it
 
-Open the pinned **Task Tracker** chat and say, for example:
+In the admin dashboard press **+** > **Add using ChatGPT** (or open the pinned **Task Tracker** chat
+in ChatGPT; the link is `CHATGPT_TASK_CHAT` in `public/app.js`) and say, for example:
 *"Aryan: send the Mohali visit report tomorrow at 3 PM, 45 minutes, high priority."*
 ChatGPT checks the Team tab, warns about Sundays, holidays, after-hours slots and overlaps,
 shows a table, and adds the rows only after you say yes.

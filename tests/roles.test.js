@@ -135,7 +135,7 @@ const vis = (d, sel) => { const el = d.querySelector(sel); return !!el && !el.cl
   w = await browse('http://127.0.0.1:4202/admin'); d = w.document;
   d.getElementById('loginSecret').value = 'adminpass1'; submitWith(w, 'loginForm'); await sleep(250);
   out.push('admin tabs: approvals=' + vis(d, '.tab[data-tab="approvals"]') + ', team=' + vis(d, '.tab[data-tab="team"]'));
-  d.getElementById('fab').click(); await sleep(30);
+  d.getElementById('fab').click(); await sleep(30); d.getElementById('fabManual').click(); await sleep(30);
   out.push('admin form buttons: ' + [...d.querySelectorAll('#qtForm button[type=submit]')].map(b => b.textContent.trim()).join(' | '));
   d.getElementById('qtTask').value = 'Pending one'; submitWith(w, 'qtForm', 'summary'); await sleep(250);
   // make a pending task to approve: TM-created style

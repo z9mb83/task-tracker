@@ -77,7 +77,11 @@ const submit = (w, id) => w.document.getElementById(id).dispatchEvent(new w.Even
   d.getElementById('loginSecret').value = 'adminpass1'; submit(w, 'loginForm'); await sleep(200);
   out.push('admin app shown: ' + !d.getElementById('appView').classList.contains('hidden') + ', title: ' + d.getElementById('appTitle').textContent);
   out.push('fab visible for admin: ' + !d.getElementById('fab').classList.contains('hidden'));
+  out.push('no New task tab for admin: ' + !d.querySelector('.tab[data-tab="newtask"]'));
   d.getElementById('fab').click(); await sleep(30);
+  out.push('plus menu: ' + [...d.querySelectorAll('#fabMenu b')].map(b => b.textContent).join(' | ') + ', chatgpt link: ' + d.getElementById('fabGpt').href + ' ' + d.getElementById('fabGpt').target);
+  d.getElementById('fabManual').click(); await sleep(30);
+  out.push('menu closed after choosing: ' + !d.getElementById('fabMenu'));
   d.getElementById('qtTask').value = 'Quick task from plus'; d.getElementById('qtEmp').value = 'Riya';
   const sb=d.querySelector('#qtForm button[data-mode="now"]'); const ev=new w.Event('submit',{cancelable:true}); ev.submitter=sb; d.getElementById('qtForm').dispatchEvent(ev); await sleep(200);
   out.push('sendNow flag sent: ' + state.lastAdd.sendNow);
@@ -91,8 +95,9 @@ const submit = (w, id) => w.document.getElementById(id).dispatchEvent(new w.Even
   const rc=d.getElementById('rmConfirm'); rc.value='Neha'; rc.dispatchEvent(new w.Event('input')); 
   d.getElementById('rmGo').click(); await sleep(200);
   out.push('Neha removed: ' + !state.team.some(m => m.name === 'Neha') + ', row gone in UI: ' + !d.querySelector('button[data-remove="Neha"]'));
-  d.querySelector('.tab[data-tab="newtask"]').click(); await sleep(30);
-  d.getElementById('ntTask').value = 'Shoot property reel'; d.getElementById('ntEmp').value = 'Riya'; submit(w, 'ntForm'); await sleep(200);
+  d.getElementById('fab').click(); await sleep(30); d.getElementById('fabManual').click(); await sleep(30);
+  d.getElementById('qtTask').value = 'Shoot property reel'; d.getElementById('qtEmp').value = 'Riya';
+  { const sb2 = d.querySelector('#qtForm button[type=submit]'); const ev2 = new w.Event('submit', { cancelable: true }); ev2.submitter = sb2; d.getElementById('qtForm').dispatchEvent(ev2); } await sleep(200);
   d.querySelector('.tab[data-tab="tasks"]').click(); await sleep(30);
   out.push('task in list: ' + d.getElementById('main').textContent.includes('Shoot property reel'));
   out.push('token persisted: ' + w.localStorage.getItem('tt_admin'));
