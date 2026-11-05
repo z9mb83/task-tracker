@@ -93,7 +93,7 @@ function recDueOn_(rule, key, cfg) {
   const prev = addDays_(key.slice(0, 7) + '-01', -1).slice(0, 7);   // a target moved over the month end
   return monthlyTarget_(key.slice(0, 7), n, cfg) === key || monthlyTarget_(prev, n, cfg) === key;
 }
-/** The next day (from `fromKey`, inclusive) this rule creates a task, or '' within a year. */
+/** The next day (from 'fromKey', inclusive) this rule creates a task, or '' within a year. */
 function nextRun_(rule, fromKey, cfg) {
   let key = fromKey;
   for (let i = 0; i < 400; i++, key = addDays_(key, 1)) {
@@ -112,8 +112,8 @@ function describeRule_(rule) {
 
 // ---------- Creating the day's tasks ----------
 /**
- * Creates today's tasks for every due rule (or only `onlyId`). Returns the number created.
- * `notStartedOnly`: skip a rule whose start time today has already passed (used right after adding it).
+ * Creates today's tasks for every due rule (or only 'onlyId'). Returns the number created.
+ * 'notStartedOnly': skip a rule whose start time today has already passed (used right after adding it).
  */
 function runRecurring_(onlyId, notStartedOnly) {
   const cfg = attSettings_();
