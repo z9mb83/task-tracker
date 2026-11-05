@@ -86,3 +86,6 @@ Formulas only: pending approval, overdue, done today, and a per-employee table.
 - One tab per active employee, created by the script, columns:
   Task ID, Task (with time limit), Details, Priority, Due (date + time), Assigned On, **Status**, **Progress %**, **Remarks**.
   Only the bold columns are editable, and only by that employee.
+- **Recurring** tab (created with the first repeating task): Rule ID, Active (Yes/No), Task, Details, Assigned To, Priority,
+  Repeat (Daily / Weekly / Monthly), Days (weekly: `Mon, Thu`; monthly: day number), Start Time, Time Limit (min),
+  Starts On, Ends On (optional), Last Created, Last Result, Created On. Edit rules from the dashboard; Active = No pauses a rule.

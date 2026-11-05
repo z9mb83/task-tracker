@@ -295,6 +295,95 @@ function linksHtml(t, small){
 function addedBy(t){ return t.createdBy ? `<div class="t-sub" style="font-size:11.5px">Added by <b>${esc(t.createdBy)}</b></div>` : ''; }
 function bindTaskRows(){ document.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => openTask(tr.dataset.id)); }
 
+// ---------- repeating tasks (admin) ----------
+const WEEKDAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const ordinal = n => n + ((n % 100 >= 11 && n % 100 <= 13) ? 'th' : ({1:'st',2:'nd',3:'rd'}[n % 10] || 'th'));
+function repeatFields(p){
+  return `<div class="field repeat-field"><label for="${p}Repeat">Repeat</label>
+      <select id="${p}Repeat"><option value="">Does not repeat</option><option>Daily</option><option>Weekly</option><option>Monthly</option></select></div>
+    <div class="repeat-opts hidden" id="${p}RepOpts">
+      <div class="weekdays hidden" id="${p}Wk" role="group" aria-label="Repeat on">${[1,2,3,4,5,6,0].map(i =>
+        `<label class="wd"><input type="checkbox" value="${WEEKDAYS[i]}"><span>${WEEKDAYS[i]}</span></label>`).join('')}</div>
+      <div class="muted rep-note" id="${p}RepNote"></div>
+      <div class="field" style="max-width:220px"><label for="${p}Ends">Ends on <span class="muted">(optional)</span></label><input type="date" id="${p}Ends"></div>
+    </div>`;
+}
+function bindRepeatFields(p){
+  const sel = $(p+'Repeat'), form = sel.closest('form');
+  const actions = form.querySelector('.actions'), hint = actions.nextElementSibling;
+  const repBtn = document.createElement('button');
+  repBtn.type = 'submit'; repBtn.className = 'btn hidden'; repBtn.dataset.mode = 'repeat'; repBtn.textContent = 'Save repeating task';
+  actions.appendChild(repBtn);
+  const dueLabel = $(p+'Due').closest('.field').querySelector('label');
+  const upd = () => {
+    const rep = sel.value, d = $(p+'Due').value ? new Date($(p+'Due').value + 'T00:00') : null;
+    $(p+'RepOpts').classList.toggle('hidden', !rep);
+    $(p+'Wk').classList.toggle('hidden', rep !== 'Weekly');
+    dueLabel.textContent = rep ? 'Starts on' : 'Date';
+    actions.querySelectorAll('button[type=submit]').forEach(b => b.classList.toggle('hidden', rep ? b !== repBtn : b === repBtn));
+    if (hint) hint.classList.toggle('hidden', !!rep);
+    if (rep === 'Weekly' && d && !$(p+'Wk').querySelector('input:checked')) $(p+'Wk').querySelector(`input[value="${WEEKDAYS[d.getDay()]}"]`).checked = true;
+    $(p+'RepNote').textContent = rep === 'Daily' ? 'Every working day. Sundays (weekly off) and office holidays are skipped.'
+      : rep === 'Weekly' ? 'On the ticked days. A ticked day that is a holiday is skipped.'
+      : rep === 'Monthly' && d ? `On the ${ordinal(d.getDate())} of every month${d.getDate() > 28 ? ' (the last day in shorter months)' : ''}. If that is a Sunday or holiday, it moves to the next working day.` : '';
+    if (rep) $(p+'Prev').textContent = 'Each copy is due ' + $(p+'Limit').value + ' min after the start time. Copies are added at 7 AM on each repeat day.';
+    else $(p+'Due').dispatchEvent(new Event('input'));
+  };
+  sel.onchange = upd; $(p+'Due').addEventListener('input', () => { if (sel.value) upd(); });
+}
+async function saveRepeating(p){
+  const rep = $(p+'Repeat').value, d = $(p+'Due').value;
+  const days = rep === 'Weekly' ? [...$(p+'Wk').querySelectorAll('input:checked')].map(c => c.value) : rep === 'Monthly' ? Number(d.slice(8, 10)) : '';
+  if (rep === 'Weekly' && !days.length) { toast('Tick at least one day.', true); return; }
+  const btns = $(p+'Form').querySelectorAll('button[type=submit]'); btns.forEach(b => b.disabled = true);
+  try {
+    const r = await call('adminAddRecurring', token, Object.assign({ task: $(p+'Task').value, details: $(p+'Details').value, assignee: $(p+'Emp').value,
+      priority: $(p+'Prio').value, repeat: rep, days, startsOn: d, endsOn: $(p+'Ends').value }, (({ startTime, limit }) => ({ startTime, limit }))(timeValues(p))));
+    data.recurring = r.recurring;
+    if (r.createdToday) { try { data = await call('adminData', token); } catch (e) { /* next refresh */ } }
+    const rule = (r.recurring || []).find(x => x.id === r.id);
+    closeModal(); render();
+    toast('Repeating task saved. ' + (r.createdToday ? "Today's task is added." : rule && rule.next ? 'First task: ' + fmtDay(rule.next) + '.' : ''));
+  } catch (err) { toast(err.message, true); btns.forEach(b => b.disabled = false); }
+}
+function fmtDay(k){ return k ? new Date(k + 'T00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : '-'; }
+function recurringCard(){
+  if (!IS_ADMIN || !data.recurring) return '';
+  const list = data.recurring;
+  return `<details class="card rec-card" ${list.length ? 'open' : ''}><summary><h3>Repeating tasks <span class="muted">(${list.length})</span></h3></summary>
+    ${list.length ? `<div class="table-wrap"><table class="rt">
+      <tr><th>Task</th><th>Employee</th><th>Repeats</th><th>Time</th><th>Next</th><th>Last</th><th></th></tr>
+      ${list.map(r => `<tr class="${r.active ? '' : 'paused'}">
+        <td class="primary t-title">${esc(r.task)} <span class="t-sub">${esc(r.id)}</span>${r.active ? '' : ' <span class="pill p-grey">Paused</span>'}</td>
+        <td data-label="Employee">${esc(r.assignee)}</td>
+        <td data-label="Repeats">${esc(r.schedule)}${r.endsOn ? `<div class="t-sub">until ${esc(fmtDay(r.endsOn))}</div>` : ''}</td>
+        <td data-label="Time">${esc(fmtClock(r.startTime))} · ${r.limit} min</td>
+        <td data-label="Next">${r.active ? esc(r.next ? fmtDay(r.next) : 'Ended') : '-'}</td>
+        <td data-label="Last" class="t-sub">${esc(r.lastResult || 'Not yet')}</td>
+        <td class="full rec-actions"><button type="button" class="btn ghost small" data-rpause="${esc(r.id)}" data-on="${r.active ? '0' : '1'}">${r.active ? 'Pause' : 'Resume'}</button>
+          <button type="button" class="btn ghost small danger" data-rdel="${esc(r.id)}">Delete</button></td></tr>`).join('')}
+    </table></div>` : `<div class="muted">None yet. Press + > Add manually and choose <b>Repeat</b> to set one up.</div>`}
+    <div class="muted" style="font-size:12px;margin-top:8px">Each repeat day at 7 AM the task is added for that day, approved. Deleting a rule keeps the tasks it already made.</div>
+  </details>`;
+}
+function bindRecurring(){
+  document.querySelectorAll('[data-rpause]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { data.recurring = await call('adminSetRecurringActive', token, b.dataset.rpause, b.dataset.on === '1'); renderTasks(); toast(b.dataset.on === '1' ? 'Resumed.' : 'Paused. No new copies until you resume it.'); }
+    catch (err) { toast(err.message, true); b.disabled = false; }
+  });
+  document.querySelectorAll('[data-rdel]').forEach(b => b.onclick = () => {
+    const r = data.recurring.find(x => x.id === b.dataset.rdel);
+    modal(`<h3>Delete repeating task?</h3><p>"${esc(r.task)}" for ${esc(r.assignee)} (${esc(r.schedule)}) will stop. Tasks it already created stay.</p>
+      <div class="actions"><button class="btn ghost" type="button" onclick="closeModal()">Keep it</button><button class="btn bad" type="button" id="rdGo">Delete</button></div>`);
+    $('rdGo').onclick = async () => {
+      $('rdGo').disabled = true;
+      try { data.recurring = await call('adminRemoveRecurring', token, r.id); closeModal(); renderTasks(); toast('Repeating task deleted.'); }
+      catch (err) { toast(err.message, true); $('rdGo').disabled = false; }
+    };
+  });
+}
+
 function renderTasks(){
   const emps = [...new Set(data.team.filter(m => m.role==='Employee').map(m => m.name))];
   const q = filters.q.toLowerCase();
@@ -311,7 +400,8 @@ function renderTasks(){
     </div>
     <div class="muted" style="margin-bottom:8px">${list.length} task(s). Click a task to edit it.</div>
     ${taskTable(list, 'No tasks match these filters.')}
-  </div>`;
+  </div>${recurringCard()}`;
+  bindRecurring();
   $('fq').oninput = e => { filters.q = e.target.value; clearTimeout(renderTasks._t); renderTasks._t = setTimeout(() => { renderTasks(); const el=$('fq'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 250); };
   $('femp').onchange = e => { filters.emp = e.target.value; renderTasks(); };
   $('fst').onchange = e => { filters.status = e.target.value; renderTasks(); };
@@ -1220,15 +1310,18 @@ function openNewTaskModal(preEmp){
       </div>
       <div class="workload hidden" id="qtLoad"></div>
       ${timeFields('qt')}
+      ${IS_ADMIN ? repeatFields('qt') : ''}
       ${addButtons('qt', true)}
     </form>`);
   bindTimeFields('qt');
   bindWorkload('qt');
+  if (IS_ADMIN) bindRepeatFields('qt');
   $('qtTask').focus();
   $('qtCancel').onclick = closeModal;
   $('qtForm').onsubmit = async e => {
     e.preventDefault();
     if (!$('qtEmp').value) { toast('Pick an employee.', true); return; }
+    if (IS_ADMIN && $('qtRepeat').value) return saveRepeating('qt');
     const sendNow = !!(e.submitter && e.submitter.dataset.mode === 'now');
     const btns = $('qtForm').querySelectorAll('button[type=submit]'); btns.forEach(b => b.disabled = true);
     const who = $('qtEmp').value;

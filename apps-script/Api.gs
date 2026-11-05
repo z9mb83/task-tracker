@@ -21,6 +21,7 @@ const API_FUNCTIONS = [
   'adminDecideChange', 'adminReopen', 'reviewTask',
   'empCheck', 'empAttendance', 'adminAttendance', 'adminAttPhoto',
   'adminHolidays', 'adminSetHoliday', 'adminRemoveHoliday',
+  'adminRecurring', 'adminAddRecurring', 'adminSetRecurringActive', 'adminRemoveRecurring',
   'gptContext', 'gptAddTasks'          // ChatGPT (api/gpt/*), not the dashboard
 ];
 

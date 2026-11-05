@@ -21,7 +21,8 @@ const ALLOWED = new Set([
   'decisionInfo', 'decide',     // approve/reject links from the admin email (signed token)
   'adminDecideChange', 'adminReopen', 'reviewTask',
   'empCheck', 'empAttendance', 'adminAttendance', 'adminAttPhoto',   // attendance
-  'adminHolidays', 'adminSetHoliday', 'adminRemoveHoliday'            // office holidays (admin)
+  'adminHolidays', 'adminSetHoliday', 'adminRemoveHoliday',           // office holidays (admin)
+  'adminRecurring', 'adminAddRecurring', 'adminSetRecurringActive', 'adminRemoveRecurring'   // repeating tasks (admin)
 ]);
 
 function samePin(a, b) {
