@@ -145,6 +145,17 @@ If you change the env vars later, redeploy from the Vercel dashboard so they tak
   inbox, use Gmail plus-addresses (`you+aryan@gmail.com`, `you+riya@gmail.com`).
 - Free Gmail accounts can email about 100 recipients a day from scripts.
 
+## Repeating tasks
+
+Admin: **+** > **Add manually**, fill in the task, and set **Repeat** to Daily, Weekly or Monthly.
+
+- **Daily**: every working day (weekly off and office holidays are skipped).
+- **Weekly**: on the ticked weekdays; a ticked day that is a holiday is skipped.
+- **Monthly**: on the start date's day of the month (the last day in shorter months); if that day is a weekly off or holiday, it moves to the next working day.
+- Every repeat day at 7 AM (India time) the day's copy is added to Tasks as an approved task. If you set one up before its start time on a repeat day, today's copy is added straight away.
+- Rules live in the **Recurring** tab of the Admin sheet (`apps-script/Recurring.gs`). Pause, resume or delete them under **All tasks** > **Repeating tasks**; deleting a rule keeps the tasks it already made.
+- The 7 AM trigger is added automatically with the first rule.
+
 ## Running the tests
 
 ```

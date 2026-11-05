@@ -166,7 +166,8 @@ function adminData(token) {
     role: sess.role, me: sess.name,
     brand: String(s['Company name'] || ''), today: todayKey,
     tasks: tasks, team: team, stats: stats, perEmployee: perEmployee,
-    attToday: (function () { try { return attendanceTodayAll_(); } catch (e) { return null; } })()
+    attToday: (function () { try { return attendanceTodayAll_(); } catch (e) { return null; } })(),
+    recurring: sess.role === 'admin' ? (function () { try { return recurringForWeb_(); } catch (e) { return null; } })() : null
   };
 }
 
